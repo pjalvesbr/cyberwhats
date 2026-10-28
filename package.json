@@ -1,0 +1,72 @@
+{
+  "name": "cyberwhats",
+  "productName": "CyberWhats",
+  "version": "3.2.0",
+  "description": "Cliente WhatsApp no estilo CyberScript 3.2",
+  "main": "src/main.mjs",
+  "type": "module",
+  "author": "Paulo Alves",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable nsis",
+    "versao": "node tools/versao.mjs"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "electron": "^38.8.6",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "org.cyberwhats.app",
+    "productName": "CyberWhats",
+    "copyright": "Paulo Alves",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "CyberWhats-3.2.0.1-portable.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "CyberWhats-3.2.0.1-setup.exe",
+      "shortcutName": "CyberWhats",
+      "installerIcon": "build/icon.ico"
+    },
+    "publish": null,
+    "extraResources": [
+      {
+        "from": "bin/cw-engine.exe",
+        "to": "bin/cw-engine.exe"
+      }
+    ],
+    "buildVersion": "3.2.0.1"
+  },
+  "cwVersion": "3.2.0.1"
+}

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https: cwmedia:; media-src 'self' data: blob: cwmedia:; style-src 'self' 'unsafe-inline'; font-src 'self'">
+<title>CyberWhats 3.2</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <div id="titlebar">
+    <img class="ticon" src="assets/icons/cyber.png" alt="">
+    <span id="title">CyberWhats 3.2</span>
+    <div class="tbtns">
+      <button class="cap" data-cmd="win:min" title="Minimizar"><span class="g-min"></span></button>
+      <button class="cap" data-cmd="win:max" title="Maximizar"><span class="g-max"></span></button>
+      <button class="cap close" data-cmd="win:close" title="Fechar"><span class="g-close"></span></button>
+    </div>
+  </div>
+  <div id="menubar">
+    <div class="menus"></div>
+    <div id="childctl">
+      <button class="cap sm" data-child="min"><span class="g-min"></span></button>
+      <button class="cap sm" data-child="restore"><span class="g-restore"></span></button>
+      <button class="cap sm" data-child="close"><span class="g-close"></span></button>
+    </div>
+  </div>
+  <div id="toolbar"></div>
+  <div id="mdi"></div>
+  <div id="switchbar"></div>
+  <div id="statusbar">
+    <div class="sb" id="sb-server"><img src="assets/icons/srvs.png"><span>(não conectado)</span></div>
+    <div class="sb" id="sb-ram"><img src="assets/icons/34.png"><span>Ram: -</span></div>
+    <div class="sb" id="sb-up"><img src="assets/icons/131.png"><span>Uptime: -</span></div>
+    <div class="sb" id="sb-ip"><img src="assets/icons/www.png"><span>IP: -</span></div>
+  </div>
+</div>
+<div id="popup" class="menu hidden"></div>
+<div id="modal-layer"></div>
+<audio id="snd"></audio>
+<script src="format.js"></script>
+<script src="cw-script.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

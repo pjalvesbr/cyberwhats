@@ -1,0 +1,215 @@
+; ============================================================
+;  frases.cws — Frases, ações e kicks do CyberScript 3.2
+;  CyberWhats Script: edite à vontade (Alt+R abre o editor).
+;  As frases aleatórias ficam na pasta frases\ (um texto por linha).
+; ============================================================
+
+; /frase [categoria]  — manda uma frase aleatória no canal/pvt ativo
+alias frase {
+  if ($1 == $null) {
+    echo -a *** Categorias: advogado bebado cretinas cumulos dquits frases ingles legais paixao peido poesias pontinho quits sogra taglines
+    echo -a *** Uso: /frase cumulos
+    halt
+  }
+  if (!$exists(frases/ $+ $1 $+ .txt)) { echo -a *** Categoria desconhecida: $1 | halt }
+  say $titulo($1) $read(frases/ $+ $1 $+ .txt)
+}
+
+; títulos usados pelo CyberScript antes de cada frase
+alias -l titulo {
+  if ($1 == advogado) return - Advogados -
+  if ($1 == cretinas) return - Piadas -
+  if ($1 == ingles) return - Aula de inglês -
+  if ($1 == peido) return - Peido -
+  if ($1 == sogra) return - Sogras -
+  return
+}
+
+; /kickfrase <nick>  — kicka (remove do grupo) com uma frase aleatória de kick
+alias kickfrase {
+  if (# == $null) { echo -a *** Use dentro de um canal. | halt }
+  if ($1 == $null) { echo -a *** Uso: /kickfrase <nick> | halt }
+  say $1 foi kickado: $read(frases/kicks.txt)
+  kick # $1
+}
+
+; /quitfrase  — mostra uma frase de quit (sem sair de nada)
+alias quitfrase say $read(frases/quits.txt)
+
+menu nicklist,query,channel {
+  &Frases
+  .Amor
+  ..Carinhos
+  ...Abraço Forte:me abraça $1 forte!
+  ...Abraço:me abraça $1 romanticamente (se isso é realmente possível...)
+  ...Beijão:me dá um beijão em $1 $+ !!
+  ...Beijo Demorado:me pega $1 pela cintura, e envolvendo $1 nos braços, manda aquele beijo gostoso e demorado!!
+  ...Beijo Lakka:me pergunta se $1 quer um Lakka | say * $1 responde que sim! | me dá um beijo em $1 dizendo que o Lakka acabou ;-)
+  ...Beijo Molhado:me dá um beijo em $1 $+ ! (Daqueles Beeem molhados!!)
+  ...Carinho:me gostaria de estar do lado de $1 agora, só fazendo carinhos...
+  ...Esquimó:me dá um beijinho de esquimó em $1 $+ ...
+  ...Paixão:me envolve $1 nos braços e lasca um beijo hollywoodiano!!
+  ...Tapete Vermelho:me estende o tapete vermelho para $1 entrar no canal #
+  ..Declarações
+  ...Perfume de Mil flores:say -=- O perfume de mil flores não seria tão forte, quanto o amor que sinto por você. -=-
+  ...Se queres me amar:say -=- Se queres me amar, ama-me sem pensar e façamos desse momento uma eterna alvorada. -=-
+  ...Corpo quente:say -=- Meu coração mais forte fica, quando meus braços tocam seu corpo quente . -=-
+  ...Foi meu Professor:say -=- A vida é uma escola e nela você foi o meu melhor professor ! -=-
+  ...Sonho não acabou:say -=- O sonho não acabou, vejo o brilho dos seus olhos na sombra do meu sorriso. -=-
+  ...Esperança:say -=- Do medo brotou um sonho, do sonho nasce uma esperança, da esperança floresce uma verdade ... _Preciso de você ! -=-
+  ...Ama-me com ternura:say -=- Ama-me com ternura que eu te amarei com loucura. -=-
+  ...O Mundo sem você:say -=- Você já imaginou como o mundo seria triste, se não existisse você ? -=-
+  ...-
+  ...Randômico:say $read(frases/paixao.txt)
+  ...-
+  ...Casamento:me quer casar com $1 em comunhão de bytes, com direito a lua de e-mail!
+  ...Chocolate:me dá uma caixa de chocolates em formato de coração para $1
+  ...Distância:me pensa na distância que está de $1 $+ ... E mesmo assim parece que $1 está pertinho, pertinho...
+  ...Suspiro:me suspira olhando pra $1 $+ ...
+  ...Cantada 1:say Um momento não é tudo, mas você é tudo em um só momento! Incrível!!
+  ...Cantada 2:say Por mais que eu pense, que eu sinta, que eu fale, tem sempre alguma coisa por dizer! Por mais que o mundo dê voltas em torno do sol, vem $1 me enlouquecer..
+  ...Doze Rosas:me dá para $1 onze rosas! @-}--}--- @-}--}--- @-}--}--- @-}--}--- @-}--}--- @-}--}--- @-}--}--- @-}--}--- @-}--}--- @-}--}--- @-}--}--- pois a décima segunda é ela mesma!
+  ...Uma Rosa:me dá para $1 uma rosa! @-}--}---.
+  ..-
+  ..Outros
+  ...Pensar que te esqueci:say $+ $1 $+ : Se um dia pensar que te esqueci, reze por mim por que este dia eu morri!
+  ...Esquecimento:say $+ $1 $+ : Todos te elogiaram, menos eu. Todos te ajudaram, menos eu. Todos te amaram, menos eu. Com o passar do tempo, todos te esqueceram, menos eu!
+  ...Dar um beijo de filme:me Envolve $1 nos braços e lasca um beijo de filme!!!
+  ...-
+  ...Beijar a mão:me Ajoelha-se perante $1 e com muito romantismo beija sua mão!
+  ...Oferecer rosa sem espinhos:me Oferece a $1 uma @}---`-,----- sem espinhos!!
+  ...Abraço romantico:me Abraça $1 romanticamente (se isso é possível...)
+  ...Suspiro:me Suspira cada vez que olha para $1
+  ..-
+  .Bebidas
+  ..Cerveja
+  ...Cerveja:me oferece a $1 um cøPø cheio de (c)e(r)vEjA  Pa(r)a aJudAr a  AcøRdAr!
+  ...Antartica:me oferece a $1 uma latinha de Antartica geladinha...
+  ...Brahma:me oferece a $1 uma latinha da Brahma super geladinha...
+  ...Budweiser:me oferece a $1 uma latinha Budweiser bem geladinha...
+  ...Skol:me oferece a $1 uma latinha de Skol geladinha...
+  ..Whisky
+  ...Jack Daniels:me oferece a $1 uma garrafa grande de Jack Daniels! MmMm...
+  ...Johnny Walker:me oferece a $1 uma garrafa de  Johnny Walker! MmMm...
+  ...Old Eight:me oferece a $1 uma grande garrafa de Old Eight! MmMm...
+  ..Refrigerantes
+  ...Coca Cola:me joga uma latinha de Coca Cola pra $1 ... Emoção pra Valer!
+  ...Coca Light:me joga uma latinha de Coca Light geladinha pra $1 $+ . Isso sim é uma bebida jovem!
+  ...Guaraná:me manda uma latinha esperta de Guaraná pra $1 $+ . Esse é o sabor!
+  ...Sprite:me lembra que imagem não é nada e sede é tudo! Justamente por isso, oferto a $1 essa Sprite geladinha...
+  ..Outras Bebidas
+  ...Bat-Gut:me dá um copo cheinho de BatGut para $1
+  ...Café:me estende para $1 um copo de café para ajudar a acordar!
+  ...Pinga:me oferece a $1 um belo copinho de Pinga... Huah!!!
+  ...Vinho:me manda uma taça \ de GOLDEN GRAPE(ótimo vinho) para $1 $+ !!!
+  .-
+  .Cantadas
+  ..Anjinho:say Ei $1 $+ , Doeu? Quando você caiu do céu anjinho ?
+  ..Beijo Agora:say Ei $1 $+ , O que você faria se eu te beijasse agora?
+  ..Osso:say Ei $1 $+ , Eu gosto de cada osso em seu corpo, especialmente o meu.
+  ..Quente:say Ei $1 $+ , Tá quente aqui ou é só você?
+  ..Convencimento:say Ei $1 $+ , Sabe o que ficaria bem em você?  Eu.
+  ..Ursinho:say Ei $1 $+ , Eu tenho saudade do meu ursinho. Quer dormir comigo?
+  ..Vestido:say Ei $1 $+ , Bonito vestido, posso falar contigo fora dele?
+  ..Deusa:say Ei $1 $+ , Eu procurei "deusa" no Aurélio, e teu nome tava incluído.
+  ..Sorriso:say Ei $1 $+ , Eu tive um péssimo dia e ver você sorrir sempre me faz melhorar. Então, você pode sorrir para mim?
+  ..Pergunta:say Ei $1 $+ , Com licença, mas qual é a cantada que funciona melhor com você?
+  ..1ª Vista:say Ei $1 $+ , Você acredita em amor à primeira vista, ou devo passar por aqui mais uma vez?
+  .Inimigos
+  ..Machucar Muito
+  ...Barata:me passa uma rasteira em $1 $+ ... | me esmaga a cabeça de $1 como se fosse uma barata! | me vê o sangue de $1 se espalhando pelo canal #
+  ...Cérebro:me enfia um ferro em brasa pela orelha de $1 e cutuca um pouco o cérebro... Hmmm será que tem algo aqui??
+  ...Chute a Gol:me chuta a cabeça de $1 a gol! | me erra e espatifa a cabeça de $1 na trave!
+  ...Chute no Estômago:me pega $1 de surpresa e emenda um chute no seu estômago!
+  ...Cúmulo da dor:me empurra $1 em um toboágua de Gilletes Sensor que vai cair numa piscina de álcool | me pergunta a $1 se está ardendo...
+  ...Enforcamento com Mouse:me pega $1 e o fio de seu mouse! | me enforca $1 com o fio do MOUSE!
+  ...Fantadas:me pega $1 e uma fanta (tábua)... | me pega $1 e dá tantas fantadas que $1 começa a chorar!
+  ...Garfo no Nariz:me pega um garfo e enfia dentro do nariz de $1
+  ...Garrafa:me pega uma garrafa vazia de cerveja e quebra na cara de $1
+  ...Gasolina:me espalha gasolina em volta de $1 $+ , pega um isqueiro Zippo e "acende"  $1 | me ri de $1 queimando em brasas!
+  ...Gelo:me pega $1 e lhe amarra as mãos em uma cama | me pega um bocado de gelo e joga em cima de $1 | me tá vendo $1 GRITAAAR de dor com os gelos!
+  ...Pedacinhos:me puxa o seu serrote e corta $1 em pequenos pedacinhos para alimentar o seu cachorro.
+  ...Piano:me joga um piano de desenho animado em $1 | me pergunta a $1 se ele ainda gosta de desenhos animados
+  ...Travesseiro:me acerta $1 com um travesseiro até que ele caia..  | me declara: AHHH I AM THE ULTIMATE TRAVESSEIRO FIGHTER!
+  ...Vidro Moído:me coloca vidro moído no açucareiro de $1
+  ..Malvadezas
+  ...Abelhas Assassinas:me passa mel em $1 e joga no meio de uma colméia lotadinha de abelhas assassinas!
+  ...Agulha:me pega uma enorme agulha e a enfia no olho $1
+  ...Bicicleta:me pega $1 e o amarra em uma bicicleta.. | me força $1 a pedalar durante 30 noites e 30 dias seguidos sem descanso e sem água!! | me vê $1 bem magrinho e quase morto! Isso é que diversão!!
+  ...Carro ao Precipício:me pega $1 e bota dentro de um carro! | me avisa a $1 que ele nunca irá se esquecer! | me liga o carro e o controla até ele cair dum precipício! | me rola de tanto rir, ao ver $1 morrer afogado!
+  ...Cuspe:me Pega $1 pelo pescoço, joga ele contra uma parede, e cospe na sua cara fedorenta!
+  ...Empresta-se Dinheiro:me coloca um anúncio no jornal dizendo que $1 empresta grandes quantidades de dinheiro sem juros
+  ...Esmalte na Boca:me passa esmalte na boca de $1 $+ ... Uau! Isso deve doer!
+  ...Garfo na Bunda:me pega um garfo e o enfia na bunda de $1
+  ...Graxa nas Luvas:me espalha graxa de sapato dentro das luvas de $1
+  ...#Hackers:me pega $1 e força a ficar dentro do canal #HaCKers... | me avisa: Sem IRCops, e com bilhares de nukes!! | me  deseja que $1 divirta-se!
+  ...Ki-Suco:me joga um quilo de Ki-suco de morango na caixa de água do prédio de $1 bem na hora do banho!
+  ...Kinder Ovo:me meleca o teclado de $1 com Kinder Ovo para que ele nunca mais possa escrever tamanha besteira!
+  ...Leite Condensado:me espalha leite condensado pela gaveta de meias de $1
+  ...Maionese nos sapatos:me enche os sapatos de $1 com Hellman's - A Verdadeira Maionese
+  ...Masoquista:me pega $1 e seu chicote! | me começa a espancar $1 $+ e nota que $1 está adorando!
+  ...Ônibus:me abandona $1 amarrado ao parachoque de um ônibus à caminho do Mosqueiro
+  ...Ovo Podre:me taca ovo podre na cabeça de $1
+  ...Piranhas:me empurra $$1 num tanque de piranhas...
+  ...Rezar:me proMENTE rezar pela alma de $1 $+ ... | me vai é rezar para que ela queime no inferno!
+  ...Secretária:me coloca um anúncio no jornal dizendo que $1 precisa de secretária e pedindo pra ligar depois da meia-noite
+  ...Tele Marketing:me inscreve $1 no cadastro de todas as empresas de telemarketing de sua cidade
+  ..Maldades
+  ...Amarrado aos Trilhos:me abandona $1 amarrado aos trilhos de um trem!
+  ...Ballet:me compra roupa de ballet pra $1 | me  pega uma 765 e grita: Dança $1 $+ , dança!
+  ...Cavalo:me atira $1 na cela de um cavalo xucro | me amarra cada braço e cada perna de $1 a um cavalo diferente e dá um tiro para afugentá-los... Vixi!! Só sobrou o tronco de $1
+  ...Chupa-Cabras:me pega $1 e joga bem no meio de um bolinho de chupa cabras! | me se admira com a quantidade de sangue e exclama: Éééécoooou!!
+  ...Cuspe na Cova:me vai cuspir na cova de $1 quando ele morrer
+  ...Dentista Maluco:me coloca $1 numa cadeira de um dentista maluco com uma broca gigante: Bzzzzzzziiiimmmmm!!!
+  ...Deus do Trovão:me chama o Deus do Trovão e pede ajuda a ele. Mais tarde, quando $1 estava voltando da loja de brinquedos sexuais, um raio atinge uma árvore e esta cai em cima de $1
+  ...Falta de Ar:me prende o nariz e tapa a boca de $1 (arf, arf!)
+  ...Foice da Morte:me ameaça $1 com uma foice!!
+  ...Martelo:me martela a unha de $1 até sair as carninhas pra fora!
+  ...Piripaque:me dá sucessivos choquinhos em $1 e assiste seus sucessivos piripaques!
+  ...Ritual Satânico:me prepara $1 para um ritual satânico... | me sente que precisa fazer com que $1 tome um banho pra se purificar | me afoga $1 em água fervente!!
+  ...Roleta Russa:me convida $1 para brincar de Roleta Russa! Vai você primeiro, vai $1
+  ...Sorvete:me enfia uma bola de sorvete na boca de $1 e o deixa engasgado! Nham, nham, nham, tá doendo o dentinho, $1 $+ ?
+  ...Tina d'água:me obriga $1 a pular de uma altura de 50m numa tina com uma gota d'água!
+  ..Torturas
+  ...Camisa de Força:me amarra $1 numa camisa de força... Caaaaaalaaaaa a boooca demônio!!
+  ...Cócegas:me pega $1 e joga na parede... | me pega $1 $+ , amarra suas mãos em uma cadeira e faz cócegas nos seus pés!
+  ...Elevador:me prende $1 em um elevador sem ventilação, tocando músicas de Ray Coniff
+  ...Fábio Jr:me coloca fones no ouvido de $1 tocando Fábio Jr! (Tortura Psicológica)
+  ...Felpas nas Unhas:me enfia felpas de bambu embaixo das unhas de $1
+  ...Fiat no sol:me tranca $1 dentro de um fiat uno preto no sol do meio dia com as janelas fechadas!
+  ...Hora do Brasil:me pega $1 e amarra em um sofá... | me força $1 a ouvir a Hora do Brasil durante 68 horas! (Tortura Psicológica)
+  ...Kamikaze:me coloca $1 dentro de um avião kamikaze... Sayonara, $1
+  ...Mindinho:me pisoteia o dedo mindinho de $1 até esmagá-lo!!
+  ...Preso no Caixão:me tranca $1 dentro de um caixão. Muá ha ha ha!
+  ...Sílvio Santos:me obriga $1 a assistir Sílvio Santos o domingo inteiro! (Tortura Psicológica)
+  ...Soda Cáustica:me pinga algumas gotinhas de soda cáustica em $1
+  ...Tião Macalé:me prende $1 enjaulado com Tião Macalé! (os restos mortais dele)
+  ...UOL:me força $1 a usar o chat do Universo On-Line no horário mais lento da Internet!
+  ..Toques
+  ...Burro:me veste $1 com pele de jumento.. A roupa ficou ótima, combinou com o conteúdo!
+  ...Conversas Publicadas:me coloca no jornal todos os LOGs de PVT que $1 guardava no winchester... Admita as bobagens que falou $1 $+ !!
+  ...Fique Frio:me prende $1 dentro de um freezer para dar-lhe tempo de esfriar a cabeça
+  ...Melhor parar:me avisa que $1 não sabe com quem está mexendo...
+  ...Não fale besteiras:me coloca uma corrente de 960 Volts na tecla <ENTER> de $1 para que ele não tecle mais besteiras!
+  ...Puxão de Orelha:me dá um puxão de orelha em $1
+  .-
+  .&Aleatórias
+  ..&Pensamentos:say $read(frases/frases.txt)
+  ..&Cúmulos:say $read(frases/cumulos.txt)
+  ..-
+  ..&Advogado:frase advogado
+  ..&Cretinas:frase cretinas
+  ..&Bêbados:frase bebado
+  ..&Aula de Inglês:frase ingles
+  ..&Legais:say " $+ $read(frases/legais.txt) $+ "
+  ..&Peido:frase peido
+  ..&Poesias:say " $+ $read(frases/poesias.txt) $+ "
+  ..&Pontinho:frase pontinho
+  ..&Sogra:frase sogra
+  ..&Taglines:say $read(frases/taglines.txt)
+}
+
+menu nicklist {
+  -
+  &Kick com frase:kickfrase $1
+}

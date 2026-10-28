@@ -1,0 +1,153 @@
+; ============================================================
+;  gamagame.cws — Gama Game (jogo de temas do CyberScript 3.2)
+;  O bot dá um tema e escolhe 5 respostas secretas. Quem digitar
+;  uma delas primeiro marca ponto. Quem chegar aos pontos vence.
+;  Temas: gamagame\temas.txt  (Tema|resposta|resposta|...)
+; ============================================================
+
+on *:START:{
+  unset %gg.chan %gg.rodando
+  if (%gg.pontos == $null) set %gg.pontos 12
+  if (%gg.tempo == $null) set %gg.tempo 60
+  if (%gg.intervalo == $null) set %gg.intervalo 15
+}
+
+; respostas dos outros no canal do jogo
+on *:TEXT:*:#:{
+  if (%gg.chan != $null) && ($chan == %gg.chan) gg.check $nick $1-
+}
+
+; suas próprias respostas (espera a mensagem sair antes de conferir)
+on *:INPUT:#:{
+  if (%gg.chan != $null) && ($chan == %gg.chan) && ($left($1,1) != /) .timer -m 1 800 gg.check $me $1-
+}
+
+alias gama {
+  if ($1 == $null) || ($1 == on) {
+    if (# == $null) { echo -a *** Entre num canal para iniciar o Gama Game. | halt }
+    if (%gg.chan != $null) { echo -a *** O Gama Game já está rodando em %gg.chan (use /gama off) | halt }
+    set %gg.chan #
+    hfree ggp
+    hmake ggp
+    msg # ::: Inicializando o Gama Game...
+    msg # ::: Você terá que responder aos temas dados. São 5 respostas secretas por tema. Quem fizer %gg.pontos pontos primeiro vence!
+    .timergg 1 3 gg.pergunta
+  }
+  elseif ($1 == off) {
+    if (%gg.chan == $null) { echo -a *** O Gama Game não está rodando. | halt }
+    .timergg off
+    unset %gg.rodando
+    msg %gg.chan ::: Gama Game encerrado.
+    unset %gg.chan
+  }
+  elseif ($1 == placar) {
+    if (%gg.chan == $null) { echo -a *** O Gama Game não está rodando. | halt }
+    msg %gg.chan ::: Placar: $iif($gg.status,$v1,ninguém pontuou ainda)
+  }
+  elseif ($1 == pular) {
+    if (%gg.rodando) { .timergg off | gg.fim }
+  }
+  elseif ($istok(pontos tempo intervalo,$1,32)) {
+    if ($2 !isnum 1-999) { echo -a *** Uso: /gama $1 <número> | halt }
+    set %gg. $+ $1 $2
+    echo -a *** Gama Game: $1 = $2
+  }
+  else {
+    echo -a *** Uso: /gama [on|off|placar|pular|pontos N|tempo N|intervalo N]
+    echo -a *** Agora: pontos para vencer = %gg.pontos · duração do tema = %gg.tempo s · intervalo = %gg.intervalo s
+  }
+}
+
+alias gg.pergunta {
+  if (%gg.chan == $null) halt
+  var %l = $read(gamagame/temas.txt), %t = 0
+  while ($istok(%gg.ultimos,$gettok(%l,1,124),124)) && (%t < 30) {
+    var %l = $read(gamagame/temas.txt)
+    inc %t
+  }
+  set %gg.ultimos $gettok($addtok(%gg.ultimos,$gettok(%l,1,124),124),-15-,124)
+  hfree gg
+  hmake gg
+  hadd gg tema $gettok(%l,1,124)
+  var %r = $gettok(%l,2-,124), %i = 1
+  while (%i <= 5) {
+    var %n = $rand(1,$numtok(%r,124))
+    hadd gg resp $+ %i $gettok(%r,%n,124)
+    var %r = $deltok(%r,%n,124)
+    inc %i
+  }
+  hadd gg faltam 5
+  set %gg.rodando 1
+  msg %gg.chan ::: Tema do Gama Game: $upper($hget(gg,tema))
+  msg %gg.chan ::: Duração: %gg.tempo segs. Valendo!
+  .timergg 1 %gg.tempo gg.fim
+}
+
+; gg.check <nick> <texto>
+alias gg.check {
+  if (!%gg.rodando) return
+  var %t = $semacento($2-), %i = 1
+  while (%i <= 5) {
+    if ($hget(gg,quem $+ %i) == $null) && ($semacento($hget(gg,resp $+ %i)) == %t) {
+      hadd gg quem $+ %i $1
+      hdec gg faltam
+      hinc ggp $1
+      if ($hget(ggp,$1) >= %gg.pontos) {
+        gg.vencedor $1
+        return
+      }
+      msg %gg.chan ::: $1 acertou a resposta %i ( $+ $hget(gg,resp $+ %i) $+ ) - Restam $hget(gg,faltam) respostas. $gg.status
+      if ($hget(gg,faltam) == 0) {
+        .timergg off
+        gg.fim
+      }
+      return
+    }
+    inc %i
+  }
+}
+
+alias gg.status {
+  var %i = 1, %s
+  while (%i <= $hget(ggp,0).item) {
+    var %s = %s < $+ $hget(ggp,%i).item $+ = $+ $hget(ggp,%i).data $+ >
+    inc %i
+  }
+  return %s
+}
+
+alias gg.fim {
+  if (!%gg.rodando) return
+  unset %gg.rodando
+  var %i = 1, %s
+  while (%i <= 5) {
+    var %s = %s %i $+ ) $hget(gg,resp $+ %i) [ $+ $iif($hget(gg,quem $+ %i),$v1,sem resposta) $+ ]
+    inc %i
+  }
+  msg %gg.chan ::: Respostas de " $+ $hget(gg,tema) $+ ": %s
+  msg %gg.chan ::: Placar: $iif($gg.status,$v1,ninguém pontuou ainda) - Próximo tema em %gg.intervalo segs.
+  .timergg 1 %gg.intervalo gg.pergunta
+}
+
+alias gg.vencedor {
+  unset %gg.rodando
+  .timergg off
+  msg %gg.chan ::: Gama Game - $1 VENCEU O JOGO com $hget(ggp,$1) pontos! Parabéns!!!
+  hfree ggp
+  hmake ggp
+  msg %gg.chan ::: Novo jogo em 20 segundos...
+  .timergg 1 20 gg.pergunta
+}
+
+menu channel {
+  -
+  &Gama Game
+  .$iif(%gg.chan == $null,&Iniciar neste canal):gama on
+  .$iif(%gg.chan != $null,&Parar):gama off
+  .$iif(%gg.chan != $null,P&lacar):gama placar
+  .$iif(%gg.rodando,Pu&lar tema):gama pular
+  .-
+  .Pontos para vencer ( $+ %gg.pontos $+ ):gama pontos $$?="Pontos para vencer:"
+  .Duração do tema ( $+ %gg.tempo $+ s):gama tempo $$?="Duração de cada tema (segundos):"
+  .Intervalo ( $+ %gg.intervalo $+ s):gama intervalo $$?="Intervalo entre temas (segundos):"
+}
