@@ -8,6 +8,8 @@ O CyberWhats usa sempre 3.2.x.y, em homenagem ao CyberScript 3.2.
 - Separador de dia nas conversas (Hoje, Ontem, data).
 - Mensagens com várias linhas e linhas longas alinhadas com o começo do texto, sem repetir o horário.
 - Respostas (citações) numa linha própria logo abaixo da mensagem ("└ respondendo Fulano: ..."), cortadas no fim da palavra.
+- Corrigido: ao abrir um canal no meio de uma conversa, mensagens e reações apareciam acima do histórico.
+- Muitas reações numa mensagem mostram os 3 emojis mais usados e o total (👏🎉❤️ 12).
 - Respostas cortadas terminam com "..." (o motor agora manda o texto citado completo).
 - Ícone de Enviar Arquivo sem o fundo escuro.
 - MOTD: "Criado por" no lugar de "Staff".

@@ -970,8 +970,11 @@ function dlgProfile() {
 async function openChannel(jid, focus) {
   let w = getWin(jid);
   const chat = S.chats.find((c) => c.id === jid);
+  if (w && w._ready) await w._ready;
   if (!w) {
     w = makeWin(jid, 'channel', chanOf(jid, chat?.name), { jid });
+    // enquanto o cabeçalho e o histórico carregam, mensagens/reações novas esperam (senão aparecem acima do histórico)
+    let done; w._ready = new Promise((r) => (done = r));
     w.add(T.joinSelf(chanOf(jid, chat?.name)));
     try {
       const g = await api('wa:group', jid);
@@ -984,16 +987,20 @@ async function openChannel(jid, focus) {
       }
     } catch (e) { w.add(T.err(friendlyError(e, 'obter os participantes'))); }
     await loadHistory(w);
+    // libera quem estava esperando só depois de quem abriu a janela terminar (ordem das mensagens)
+    setTimeout(() => { w._ready = null; done(); }, 0);
   }
   if (focus) activate(jid);
   return w;
 }
 async function openQuery(jid, nick, focus) {
   let w = getWin(jid);
+  if (w && w._ready) await w._ready;
   if (!w) {
     const name = nickFor(jid, nick || labelFor(jid));
     indexNick(name, jid);
     w = makeWin(jid, 'query', name, { jid });
+    let done; w._ready = new Promise((r) => (done = r));
     w.setTitle(`${name} (+${num(jid)})`);
     S.pvtCount = (S.pvtCount || 0) + 1;
     loadPhoto(w);
@@ -1003,6 +1010,8 @@ async function openQuery(jid, nick, focus) {
     w.add(`${C}14>>> Canais em comum: ${common.length ? common.join(' ') : '-'}`, { nots: true });
     w.add('', { nots: true });
     await loadHistory(w);
+    // libera quem estava esperando só depois de quem abriu a janela terminar (ordem das mensagens)
+    setTimeout(() => { w._ready = null; done(); }, 0);
   }
   if (focus) activate(jid);
   return w;
@@ -1060,9 +1069,11 @@ function setReaction(ln, who, emoji) {
   let sp = ln.querySelector(':scope > .reacts');
   if (!ln._reacts.size) { sp?.remove(); return; }
   if (!sp) { sp = h('span', { class: 'reacts' }); const media = ln.querySelector(':scope > .inmedia'); if (media) ln.insertBefore(sp, media); else ln.appendChild(sp); }
+  // como no WhatsApp: os 3 emojis mais usados e o total de pessoas
   const count = new Map();
   for (const e of ln._reacts.values()) count.set(e, (count.get(e) || 0) + 1);
-  sp.textContent = ' ' + [...count].map(([e, n]) => e + (n > 1 ? n : '')).join(' ');
+  const top = [...count].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e]) => e).join('');
+  sp.textContent = top + (ln._reacts.size > 1 ? ' ' + ln._reacts.size : '');
   sp.title = [...ln._reacts].map(([n, e]) => `${n}: ${e}`).join('\n');
 }
 // ---- mensagens de erro: traduz os códigos do WhatsApp para algo legível e guarda o original no log
@@ -1242,6 +1253,7 @@ function onWa(ev) {
     }
     case 'reaction': {
       const w = getWin(ev.chat); if (!w || !w.buf) break;
+      if (w._ready) { w._ready.then(() => onWa(ev)); break; }
       const who = ev.fromMe ? myNick() : cleanNick(ev.nick);
       // reação aparece na própria mensagem (como no WhatsApp); só vira linha se a mensagem não estiver na tela
       const lns = ev.targetId ? w.buf.querySelectorAll(`.ln[data-id="${CSS.escape(ev.targetId)}"]`) : [];
@@ -1283,6 +1295,7 @@ async function onMessage(m) {
   const idx = S.chats.findIndex((c) => c.id === m.chat);
   if (idx >= 0) S.chats[idx].ts = m.ts; else S.chats.unshift({ id: m.chat, name: m.chatName, group: m.group, ts: m.ts });
   let w = getWin(m.chat) || (m.alt && getWin(m.alt)) || null;
+  if (w && w._ready) await w._ready;
   const isNew = !w;
   if (!w) {
     // no IRC das antigas, um pvt novo abre a janela sem roubar o foco; grupo idem
