@@ -50,12 +50,12 @@
       ]
     },
     "portable": {
-      "artifactName": "CyberWhats-3.2.0.1-portable.exe"
+      "artifactName": "CyberWhats-3.2.0.2-portable.exe"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "CyberWhats-3.2.0.1-setup.exe",
+      "artifactName": "CyberWhats-3.2.0.2-setup.exe",
       "shortcutName": "CyberWhats",
       "installerIcon": "build/icon.ico"
     },
@@ -66,7 +66,7 @@
         "to": "bin/cw-engine.exe"
       }
     ],
-    "buildVersion": "3.2.0.1"
+    "buildVersion": "3.2.0.2"
   },
-  "cwVersion": "3.2.0.1"
+  "cwVersion": "3.2.0.2"
 }

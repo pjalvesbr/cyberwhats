@@ -223,14 +223,36 @@ class Win {
     if (S.active === this.id) updateAppTitle();
   }
   setIcon(name) { $('img', this.title).src = $('img', this.sw).src = `assets/icons/${name}.png`; }
+  addDay(d, before) {
+    const hoje = new Date(), ontem = new Date(Date.now() - 864e5);
+    const dia = d.toLocaleDateString('pt-BR', { weekday: 'long' });
+    const label = d.toDateString() === hoje.toDateString() ? 'Hoje' : d.toDateString() === ontem.toDateString() ? 'Ontem' : dia[0].toUpperCase() + dia.slice(1);
+    const ln = h('div', { class: 'ln daysep' });
+    ln.innerHTML = codesToHtml(`${C}14—————— ${label}, ${d.toLocaleDateString('pt-BR')} ——————`);
+    if (before) this.buf.insertBefore(ln, before); else this.buf.appendChild(ln);
+    this.lines++;
+    return ln;
+  }
   add(line, opts = {}) {
     if (!this.buf) return;
     // janela escondida (outra maximizada na frente): não dá para medir, usa a última posição conhecida
     const hidden = S.maxed && S.active !== this.id;
     const stick = hidden ? this.atBottom !== false : this.buf.scrollTop + this.buf.clientHeight >= this.buf.scrollHeight - 20;
     const d = opts.date || new Date();
-    const ts = S.cfg.timestamp !== false && !opts.nots && line !== '' ? `[${hms(d)}] ` : '';
-    const ln = h('div', { class: 'ln' + (opts.hist ? ' hist' : '') + (opts.cls ? ' ' + opts.cls : '') });
+    // separador quando muda o dia (só para mensagens com data)
+    if (opts.date && !opts.cont) {
+      const day = d.toDateString();
+      if (this._lastDay !== day) { this._lastDay = day; this.addDay(d, opts.before); }
+    }
+    const ts = S.cfg.timestamp !== false && !opts.nots && !opts.cont && line !== '' ? `[${hms(d)}] ` : '';
+    const ln = h('div', { class: 'ln' + (opts.hist ? ' hist' : '') + (opts.cls ? ' ' + opts.cls : '') + (opts.cont ? ' cont' : '') });
+    // recuo: linhas que quebram (e as continuações) alinham com o começo do texto, depois do <nick>
+    if (opts.indent != null) {
+      const n = opts.indent + (opts.cont ? 0 : ts.length);
+      const pre = opts.cont ? opts.indent + (S.cfg.timestamp !== false ? 11 : 0) : n;
+      ln.style.paddingLeft = pre + 'ch';
+      if (!opts.cont) ln.style.textIndent = -pre + 'ch';
+    }
     if (opts.id) ln.dataset.id = opts.id;
     if (opts.nick) ln.dataset.nick = opts.nick;
     if (opts.jid) ln.dataset.jid = opts.jid;
@@ -548,13 +570,19 @@ function makeWin(id, type, name, opts) {
 }
 function activate(id, noFocus = false) {
   const w = S.wins.get(id); if (!w) return;
-  if (S.active && S.active !== id) { const o = S.wins.get(S.active); o?.el.classList.remove('active'); o?.sw.classList.remove('active'); if (o) S.prevActive = S.active; }
+  if (S.active && S.active !== id) {
+    const o = S.wins.get(S.active); o?.el.classList.remove('active'); o?.sw.classList.remove('active'); if (o) S.prevActive = S.active;
+    // saindo da janela: tudo que estava nela foi visto; a próxima mensagem nova ganha uma linha nova
+    if (o?.jid) { setSeen(o.jid); if (o._newMark) { o._newMark.remove(); o._newMark = null; o.lines--; } }
+  }
   S.active = id;
   w.el.classList.remove('min'); w.el.classList.add('active'); w.sw.classList.add('active');
   w.el.style.zIndex = ++S.zTop;
   w.activity = null; w.sw.classList.remove('act-msg', 'act-event', 'act-hl');
   if (S.maxed) w.el.classList.add('max');
-  if (w.buf && w.atBottom !== false) requestAnimationFrame(() => { w.buf.scrollTop = w.buf.scrollHeight; });
+  // tem mensagens novas: abre mostrando a linha "mensagens novas" no topo (como o WhatsApp)
+  if (w.buf && w._newMark && !w._newMark._shown) requestAnimationFrame(() => { w._newMark._shown = true; w.buf.scrollTop += w._newMark.getBoundingClientRect().top - w.buf.getBoundingClientRect().top - 2; w.atBottom = w.buf.scrollTop + w.buf.clientHeight >= w.buf.scrollHeight - 20; });
+  else if (w.buf && w.atBottom !== false) requestAnimationFrame(() => { w.buf.scrollTop = w.buf.scrollHeight; });
   updateAppTitle();
   if (w.jid && S.conn === 'online') {
     api('wa:read', w.jid).catch(() => {});
@@ -704,7 +732,7 @@ const MENUS = {
     ['Editor de scripts...', () => scriptEditor(), false, { icon: '83', key: 'Alt+R' }],
     ['Recarregar scripts', () => loadScripts(true, cur())],
     '-',
-    ['Mudar nick (nome do perfil)...', () => askRun('Nick', 'Novo nick (nome no WhatsApp):', S.me?.name || '', (v) => run('/nick ' + v, cur())), S.conn !== 'online', { icon: '87' }],
+    ['Mudar nick (nome do perfil)...', () => askRun('Nick', 'Novo nick (nome no WhatsApp):', S.me?.name || '', (v) => run('/nick ' + v, cur())), S.conn !== 'online', { icon: 'av2' }],
     ['Meu apelido local...', () => S.me ? aliasDialog(S.me.id, myNick()) : null, !S.me],
     ['Mudar recado...', () => askRun('Recado', 'Novo recado (status):', '', (v) => run('/recado ' + v, cur())), S.conn !== 'online']
   ],
@@ -763,7 +791,7 @@ const TOOLBAR = [
   ['21', 'Opções', () => dlgOptions()], ['20', 'Pasta de Canais', () => dlgFavorites()], ['59', 'Notify+', () => dlgNotify()], ['147', 'Ignore+', () => dlgIgnore()], '-',
   ['35', 'Auto-Join', () => dlgAutojoin()], ['122', 'Informações do grupo', () => cmdInfo(cur())], ['148', 'Cores', () => dlgTheme()], ['38', 'Listar Canais', () => run('/list', cur())], ['msn', 'Listar Contatos', () => run('/contatos', cur())], '-',
   ['16', 'Enviar Arquivo', () => run('/enviar', cur())], ['85', 'Chat (abrir pvt)', () => MENUS.Comandos().then((m) => m[1][1]())], ['142', 'Janelas Lado-a-Lado', tile], ['143', 'Janelas em Cascata', cascade], '-',
-  ['157', 'Theme Manager', () => dlgTheme()], ['87', 'Nick / Recado', () => dlgProfile()], ['get', 'Recebidos', () => api('app:openDownloads')], ['33', 'Logs', () => api('app:openLogs')], '-',
+  ['157', 'Theme Manager', () => dlgTheme()], ['av2', 'Nick / Recado', () => dlgProfile()], ['get', 'Recebidos', () => api('app:openDownloads')], ['33', 'Logs', () => api('app:openLogs')], '-',
   ['fkeys', 'Atalhos', () => run('/atalhos', cur())], ['89', 'Dicas', () => run('/dicas', cur())], ['about', 'About', () => dlgAbout()], ['83', 'Ajuda?', () => run('/ajuda', cur())]
 ];
 function buildToolbar() {
@@ -977,6 +1005,52 @@ function actionBody(m, shown, t) {
   for (const c of cands.sort((a, b) => b.length - a.length)) if (lt.startsWith(c.toLowerCase() + ' ')) return t.slice(c.length + 1);
   return t;
 }
+// ---- "mensagens novas": até onde cada conversa já foi vista (guardado no navegador do app)
+const SEEN = (() => { try { return JSON.parse(localStorage.getItem('cw.seen') || '{}'); } catch { return {}; } })();
+const LAST_RUN = (() => { try { return Number(localStorage.getItem('cw.lastRun')) || 0; } catch { return 0; } })();
+let seenTimer = null;
+function setSeen(jid, ts = Date.now() / 1000) {
+  if (!jid) return;
+  if ((SEEN[jid] || 0) >= ts) return;
+  SEEN[jid] = ts;
+  clearTimeout(seenTimer);
+  seenTimer = setTimeout(() => { try { localStorage.setItem('cw.seen', JSON.stringify(SEEN)); } catch {} }, 1000);
+}
+function saveRun() { try { localStorage.setItem('cw.lastRun', String(Date.now() / 1000)); localStorage.setItem('cw.seen', JSON.stringify(SEEN)); } catch {} }
+setInterval(saveRun, 60000);
+addEventListener('beforeunload', () => { const w = S.wins.get(S.active); if (w?.jid) SEEN[w.jid] = Date.now() / 1000; saveRun(); });
+// coloca a linha "mensagens novas" antes da primeira mensagem não vista da conversa
+function markNew(w, m, ln, hist) {
+  if (!w.jid || !ln || m.fromMe) return;
+  const watching = S.active === w.id && document.hasFocus() && !(S.wins.get(S.active)?.el.classList.contains('min'));
+  if (watching && !hist) { setSeen(w.jid, m.ts); return; }
+  if (w._newMark) return;
+  const since = SEEN[w.jid] ?? LAST_RUN;
+  if (!since || m.ts <= since) return;
+  const sep = h('div', { class: 'ln newsep' });
+  sep.innerHTML = codesToHtml(`${C}4—————————— mensagens novas ——————————`);
+  let at = ln; while (at.previousSibling && at.previousSibling.classList?.contains('quote')) at = at.previousSibling;
+  w.buf.insertBefore(sep, at);
+  w._newMark = sep; w.lines++;
+}
+function setReaction(ln, who, emoji) {
+  ln._reacts = ln._reacts || new Map();
+  if (emoji) ln._reacts.set(who, emoji); else ln._reacts.delete(who);
+  let sp = ln.querySelector(':scope > .reacts');
+  if (!ln._reacts.size) { sp?.remove(); return; }
+  if (!sp) { sp = h('span', { class: 'reacts' }); const media = ln.querySelector(':scope > .inmedia'); if (media) ln.insertBefore(sp, media); else ln.appendChild(sp); }
+  const count = new Map();
+  for (const e of ln._reacts.values()) count.set(e, (count.get(e) || 0) + 1);
+  sp.textContent = ' ' + [...count].map(([e, n]) => e + (n > 1 ? n : '')).join(' ');
+  sp.title = [...ln._reacts].map(([n, e]) => `${n}: ${e}`).join('\n');
+}
+// texto numa linha só, cortado no fim de uma palavra
+function shortText(t, max = 60) {
+  t = strip(waToCodes(String(t || ''))).replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  return (cut.lastIndexOf(' ') > max * 0.6 ? cut.slice(0, cut.lastIndexOf(' ')) : cut) + '…';
+}
 function senderNick(w, m) {
   if (m.fromMe) return myNick();
   if (w.type === 'channel') { const n = w.nickOf(m.sender); if (n) return n.nick; }
@@ -999,19 +1073,27 @@ function renderMsg(w, m, hist = false) {
     if (m.hasMedia) html = ` <a class="media" data-chat="${esc(m.chat)}" data-id="${esc(m.id)}">(abrir)</a>`;
     if (S.cfg.inlineMedia !== false && m.hasMedia) html += inlineMediaHtml(m);
   }
-  if (m.quote) text = `${C}14«${cleanNick(m.quote.nick)}: ${m.quote.text.replace(/\n/g, ' ')}»${O} ` + text;
   if (m.edited) html += ' <span style="color:#808080">(editada)</span>';
   const lines = text.split('\n');
+  // tamanho visível do "<nick> " para alinhar as linhas seguintes com o começo do texto
+  const prefix = m.kind === 'action' ? T.action(nick, '') : w.type === 'channel' ? (m.fromMe ? T.textChanSelf(nick, adm, '') : T.textChan(nick, adm, '', hl)) : (m.fromMe ? T.textQuerySelf(nick, '') : T.textQuery(nick, ''));
+  const indent = Math.min(strip(prefix).length, 30);
   let first;
   lines.forEach((t, i) => {
     let s;
-    if (m.kind === 'action') s = T.action(nick, i === 0 ? actionBody(m, nick, t) : t);
-    else if (i > 0) s = `${hl ? C + '5' : ''}${' '.repeat(Math.min(nick.length + 3, 20))}${t}`;
+    if (i > 0) s = `${hl ? C + '5' : m.kind === 'action' ? C + '6' : ''}${t}`;
+    else if (m.kind === 'action') s = T.action(nick, actionBody(m, nick, t));
     else if (w.type === 'channel') s = m.fromMe ? T.textChanSelf(nick, adm, t) : T.textChan(nick, adm, t, hl);
     else s = m.fromMe ? T.textQuerySelf(nick, t) : T.textQuery(nick, t);
-    const ln = w.add(s, { date, hist, id: m.id, nick, jid: m.fromMe ? null : m.sender, html: i === lines.length - 1 ? html : '', activity: hist ? null : hl ? 'hl' : 'msg', forceScroll: m.fromMe && !hist });
+    const ln = w.add(s, { date, hist, id: m.id, nick, jid: m.fromMe ? null : m.sender, html: i === lines.length - 1 ? html : '', activity: hist ? null : hl ? 'hl' : 'msg', forceScroll: m.fromMe && !hist, indent, cont: i > 0 });
+    // resposta (citação): linha cinza logo acima, como o balão citado do WhatsApp
+    if (i === 0 && ln && m.quote) {
+      const q = w.add(`${C}14┌ ${cleanNick(m.quote.nick)}: ${shortText(m.quote.text, 90)}`, { date, hist, indent, cont: true, cls: 'quote' });
+      if (q) ln.parentNode.insertBefore(q, ln);
+    }
     if (ln && i === lines.length - 1 && ln.querySelector('.inmedia')) queueMedia(w, m, ln, hist);
     if (i === 0 && ln && !m.fromMe) markNick(ln, nick);
+    if (i === 0 && ln) markNew(w, m, ln, hist);
     first = first || ln;
   });
   return first;
@@ -1097,8 +1179,13 @@ function onWa(ev) {
       break;
     }
     case 'reaction': {
-      const w = getWin(ev.chat); if (!w || !ev.emoji) break;
-      w.add(T.action(cleanNick(ev.fromMe ? S.me?.name : ev.nick), `reagiu com ${ev.emoji}${ev.target ? ` a "${ev.target}"` : ''}`), { activity: 'event' });
+      const w = getWin(ev.chat); if (!w || !w.buf) break;
+      const who = ev.fromMe ? myNick() : cleanNick(ev.nick);
+      // reação aparece na própria mensagem (como no WhatsApp); só vira linha se a mensagem não estiver na tela
+      const lns = ev.targetId ? w.buf.querySelectorAll(`.ln[data-id="${CSS.escape(ev.targetId)}"]`) : [];
+      if (lns.length) { setReaction(lns[lns.length - 1], who, ev.emoji); break; }
+      if (!ev.emoji) break;
+      w.add(T.action(who, `reagiu com ${ev.emoji}${ev.target ? ` a "${shortText(ev.target, 50)}"` : ''}`), { activity: 'event' });
       break;
     }
     case 'presence': {
@@ -1486,7 +1573,7 @@ async function sendFile(w, path) {
   catch (err) { w.add(T.err('Falha no envio: ' + err.message)); }
 }
 // Janela de lista (estilo "Lista de Canais") com filtro
-function listWindow(id, title, cols, rows, filter, onOpen, menu) {
+function listWindow(id, title, cols, rows, filter, onOpen, menu, refresh) {
   let w = getWin(id);
   if (!w) w = makeWin(id, 'list', title, {});
   w.body.innerHTML = '';
@@ -1494,6 +1581,13 @@ function listWindow(id, title, cols, rows, filter, onOpen, menu) {
   const lv = h('div', { class: 'listview' });
   lv.innerHTML = `<table><thead><tr>${cols.map((c) => `<th${c.right ? ' style="text-align:right"' : ''}>${esc(c.t)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr data-id="${esc(r.id)}" data-q="${esc(r.q.toLowerCase())}">${r.cells.map((c, i) => `<td${cols[i].right ? ' style="text-align:right"' : ''}>${esc(String(c ?? ''))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   const input = $('input', bar), cnt = $('.cnt', bar);
+  if (refresh) {
+    const rb = h('img', { class: 'lbtn', src: 'assets/btn/atualiza.png', title: 'Atualizar a lista', draggable: 'false' });
+    rb.addEventListener('mouseenter', () => (rb.src = 'assets/btn/atualiza_b.png'));
+    rb.addEventListener('mouseleave', () => (rb.src = 'assets/btn/atualiza.png'));
+    rb.addEventListener('click', () => { rb.style.opacity = '.5'; Promise.resolve(refresh(input.value.trim())).finally(() => { rb.style.opacity = ''; }); });
+    bar.appendChild(rb);
+  }
   const apply = () => {
     const q = input.value.trim().toLowerCase().replace(/^#/, '').replace(/_/g, ' ');
     let n = 0;
@@ -1528,7 +1622,8 @@ async function cmdList(filter) {
     groups.map((g) => ({ id: g.id, q: g.name + ' ' + (g.topic || ''), cells: [chanOf(g.id, g.name), g.size || '?', (g.topic || '').replace(/\s+/g, ' ')] })),
     filter, (id) => openChannel(id, true),
     (id) => [['Entrar', () => openChannel(id, true)], ['Informações', () => openChannel(id, true).then((w) => cmdInfo(w))], '-',
-      [(S.cfg.autojoin || []).includes(id) ? 'Remover do Auto-Join' : 'Adicionar ao Auto-Join', () => { const l = new Set(S.cfg.autojoin || []); l.has(id) ? l.delete(id) : l.add(id); setCfg({ autojoin: [...l] }); }]]);
+      [(S.cfg.autojoin || []).includes(id) ? 'Remover do Auto-Join' : 'Adicionar ao Auto-Join', () => { const l = new Set(S.cfg.autojoin || []); l.has(id) ? l.delete(id) : l.add(id); setCfg({ autojoin: [...l] }); }]],
+    (f) => cmdList(f));
 }
 // contatos com quem você conversou por último (abre sozinho ao conectar, se habilitado)
 async function cmdRecent(n = 30, auto = false) {
@@ -1543,7 +1638,8 @@ async function cmdRecent(n = 30, auto = false) {
   const lw = listWindow('recent', 'Contatos Recentes', [{ t: 'Nick' }, { t: 'Número' }, { t: 'Última conversa' }],
     list.map((c) => ({ id: c.id, q: `${alias(c.id)} ${c.name || ''} ${num(c.id)}`, cells: [nickFor(c.id, c.name), '+' + num(c.id), fmt(c.ts)] })),
     '', (id) => { const c = list.find((x) => x.id === id); openQuery(id, c?.name, true); },
-    (id) => { const c = list.find((x) => x.id === id); return [['Query (pvt)', () => openQuery(id, c?.name, true)], ['Whois', () => run('/whois +' + num(id), cur())], ['Definir apelido local...', () => aliasDialog(id, nickFor(id, c?.name))], ['Copiar número', () => copyText('+' + num(id))], '-', ['Não abrir esta lista ao conectar', () => setCfg({ showRecent: false }), false, { checked: S.cfg.showRecent === false }]]; });
+    (id) => { const c = list.find((x) => x.id === id); return [['Query (pvt)', () => openQuery(id, c?.name, true)], ['Whois', () => run('/whois +' + num(id), cur())], ['Definir apelido local...', () => aliasDialog(id, nickFor(id, c?.name))], ['Copiar número', () => copyText('+' + num(id))], '-', ['Não abrir esta lista ao conectar', () => setCfg({ showRecent: false }), false, { checked: S.cfg.showRecent === false }]]; },
+    async () => { if (S.conn === 'online') { try { S.chats = await api('wa:chats'); S.contacts = await api('wa:contacts'); } catch {} } return cmdRecent(n); });
   lw.setIcon('msn');
 }
 async function cmdUsers(filter) {
@@ -1557,7 +1653,8 @@ async function cmdUsers(filter) {
   const lw = listWindow('users', 'Lista de Contatos', [{ t: 'Nick' }, { t: 'Número' }, { t: 'Nome no perfil' }, { t: 'Agenda' }, { t: 'Última conversa' }],
     list.map((c) => ({ id: c.id, q: `${alias(c.id)} ${c.nick} ${c.push} ${num(c.id)}`, cells: [nickFor(c.id, c.nick), '+' + num(c.id), c.push || '', c.my ? 'sim' : '', fmtTs(c.ts)] })),
     filter, (id) => { const c = list.find((x) => x.id === id); openQuery(id, c?.nick, true); },
-    (id) => { const c = list.find((x) => x.id === id); return [['Query (pvt)', () => openQuery(id, c?.nick, true)], ['Definir apelido local...', () => aliasDialog(id, nickFor(id, c?.nick))], ['Whois', () => run('/whois +' + num(id), cur())], ['Copiar número', () => copyText('+' + num(id))], '-', ['Notify', () => run('/notify +' + num(id), cur())], ['Ignorar', () => run('/ignore +' + num(id), cur())]]; });
+    (id) => { const c = list.find((x) => x.id === id); return [['Query (pvt)', () => openQuery(id, c?.nick, true)], ['Definir apelido local...', () => aliasDialog(id, nickFor(id, c?.nick))], ['Whois', () => run('/whois +' + num(id), cur())], ['Copiar número', () => copyText('+' + num(id))], '-', ['Notify', () => run('/notify +' + num(id), cur())], ['Ignorar', () => run('/ignore +' + num(id), cur())]]; },
+    (f) => cmdUsers(f));
   lw.setIcon('msn');
 }
 async function cmdInfo(w) {

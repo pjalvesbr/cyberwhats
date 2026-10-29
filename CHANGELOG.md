@@ -2,6 +2,16 @@
 
 O CyberWhats usa sempre 3.2.x.y, em homenagem ao CyberScript 3.2.
 
+## 3.2.0.2
+- Botões das janelas redesenhados, com o texto certo de cada um (Link de Convite, Informações do Grupo, Pasta de Recebidos).
+- Linha **"mensagens novas"** marcando onde começam as mensagens que chegaram desde a última vez; a janela abre mostrando essa linha.
+- Separador de dia nas conversas (Hoje, Ontem, data).
+- Mensagens com várias linhas e linhas longas alinhadas com o começo do texto, sem repetir o horário.
+- Respostas (citações) numa linha própria acima da mensagem, cortadas no fim da palavra.
+- Reações aparecem na própria mensagem (👍2), como no WhatsApp.
+- Botão **Atualizar** em `/list`, `/contatos` e `/recentes`.
+- Ícone novo para Nick / Recado na toolbar.
+
 ## 3.2.0.1 — primeira versão pública
 - Visual do CyberScript 3.2: janelas MDI, switchbar, toolbar, barra de status, tema Padrão (`>>>`), fonte Fixedsys, ícones e sons originais, MOTD estilo BRASnet.
 - Grupos como `#canais` (nicklist com `@` admins e `.` dono, tópico, entrou/saiu/kick) e conversas como pvts.

@@ -232,3 +232,8 @@ body.inactive #titlebar { color: #888; background: linear-gradient(180deg, #fafa
 /* com as janelas maximizadas só a ativa é desenhada (muitos canais abertos estouravam a memória de vídeo e a tela ficava branca) */
 body.child-max .mdiwin.max:not(.active) { visibility: hidden; content-visibility: hidden; }
 .inmedia.audio .mload { cursor: pointer; text-decoration: underline; color: var(--c12); }
+/* reações dentro da mensagem */
+.buffer .ln .reacts { display: inline-block; margin-left: 6px; padding: 0 4px; border: 1px solid #c8c8c8; border-radius: 8px; background: var(--buf-bg); font-size: 13px; line-height: 14px; text-indent: 0; cursor: default; }
+.buffer .ln.daysep { text-align: center; margin: 4px 0; }
+.buffer .ln.newsep { text-align: center; margin: 2px 0; }
+.listbar .lbtn { height: 18px; cursor: default; }
