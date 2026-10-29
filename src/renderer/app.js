@@ -87,7 +87,7 @@ class Win {
     this.activity = null; this.lines = 0; this.nicks = []; this.hist = []; this.histPos = -1;
     this.quote = null; this.group = null;
     const el = this.el = h('div', { class: 'mdiwin' });
-    const icon = { status: S.conn === 'online' ? 'online' : 'offline', channel: '85', query: 'av', list: '38', custom: '89' }[type] || 'cyber';
+    const icon = { status: S.conn === 'online' ? 'online' : 'offline', channel: '85', query: 'userl', list: '38', custom: '7' }[type] || 'cyber';
     this.title = h('div', { class: 'mtitle' }, `<img src="assets/icons/${icon}.png"><span class="mt"></span>`);
     for (const [k, g] of [['min', 'g-min'], ['max', 'g-max'], ['close', 'g-close']]) {
       const b = h('button', { class: 'cap' + (k === 'close' ? ' close' : '') }, `<span class="${g}"></span>`);
@@ -701,8 +701,8 @@ const MENUS = {
     ['Desconectar', () => run('/disconnect', st()), S.conn === 'offline'],
     ['Mostrar WhatsApp Web original', () => run('/web', st()), S.conn === 'offline'],
     '-',
-    ['Abrir pasta de logs', () => api('app:openLogs'), false, { icon: '33' }],
-    ['Abrir pasta de recebidos', () => api('app:openDownloads'), false, { icon: 'get' }],
+    ['Abrir pasta de logs', () => api('app:openLogs'), false, { icon: '7' }],
+    ['Abrir pasta de recebidos', () => api('app:openDownloads'), false, { icon: 'do' }],
     '-',
     ['Encerrar sessão (deslogar aparelho)', () => run('/logout', st())],
     ['Sair', () => api('win:close'), false, { key: 'Alt+F4' }]
@@ -726,13 +726,13 @@ const MENUS = {
   ],
   Ferramentas: () => [
     ['Opções...', dlgOptions, false, { icon: '21', key: 'Alt+O' }],
-    ['Notify List...', dlgNotify, false, { icon: '59' }],
+    ['Notify List...', dlgNotify, false, { icon: 'online' }],
     ['Ignore List...', dlgIgnore, false, { icon: '147' }],
-    ['Temas / Cores...', dlgTheme, false, { icon: '148' }],
-    ['Editor de scripts...', () => scriptEditor(), false, { icon: '83', key: 'Alt+R' }],
+    ['Temas / Cores...', dlgTheme, false, { icon: '146' }],
+    ['Editor de scripts...', () => scriptEditor(), false, { icon: 'cyber', key: 'Alt+R' }],
     ['Recarregar scripts', () => loadScripts(true, cur())],
     '-',
-    ['Mudar nick (nome do perfil)...', () => askRun('Nick', 'Novo nick (nome no WhatsApp):', S.me?.name || '', (v) => run('/nick ' + v, cur())), S.conn !== 'online', { icon: 'av2' }],
+    ['Mudar nick (nome do perfil)...', () => askRun('Nick', 'Novo nick (nome no WhatsApp):', S.me?.name || '', (v) => run('/nick ' + v, cur())), S.conn !== 'online', { icon: '59' }],
     ['Meu apelido local...', () => S.me ? aliasDialog(S.me.id, myNick()) : null, !S.me],
     ['Mudar recado...', () => askRun('Recado', 'Novo recado (status):', '', (v) => run('/recado ' + v, cur())), S.conn !== 'online']
   ],
@@ -755,9 +755,9 @@ const MENUS = {
     ['Comandos', () => run('/ajuda', cur()), false, { icon: '83' }],
     ['Atalhos', () => run('/atalhos', cur()), false, { icon: 'fkeys' }],
     ['Linguagem dos scripts', () => run('/ajuda scripts', cur()), false],
-    ['Dicas', () => run('/dicas', cur()), false, { icon: '89' }],
+    ['Dicas', () => run('/dicas', cur()), false, { icon: '99' }],
     '-',
-    ['Sobre o CyberWhats...', dlgAbout, false, { icon: 'about' }]
+    ['Sobre o CyberWhats...', dlgAbout, false, { icon: '75' }]
   ]
 };
 function buildMenubar() {
@@ -788,11 +788,11 @@ function buildMenubar() {
 // toolbar baseada em sistema/tb1.txt do CyberScript
 const TOOLBAR = [
   ['144', 'Conectar / Desconectar', () => run(S.conn === 'offline' ? '/server' : '/disconnect', st())], '-',
-  ['21', 'Opções', () => dlgOptions()], ['20', 'Pasta de Canais', () => dlgFavorites()], ['59', 'Notify+', () => dlgNotify()], ['147', 'Ignore+', () => dlgIgnore()], '-',
-  ['35', 'Auto-Join', () => dlgAutojoin()], ['122', 'Informações do grupo', () => cmdInfo(cur())], ['148', 'Cores', () => dlgTheme()], ['38', 'Listar Canais', () => run('/list', cur())], ['msn', 'Listar Contatos', () => run('/contatos', cur())], '-',
+  ['21', 'Opções', () => dlgOptions()], ['20', 'Pasta de Canais', () => dlgFavorites()], ['online', 'Notify+', () => dlgNotify()], ['147', 'Ignore+', () => dlgIgnore()], '-',
+  ['35', 'Auto-Join', () => dlgAutojoin()], ['62', 'Informações do grupo', () => cmdInfo(cur())], ['146', 'Cores', () => dlgTheme()], ['38', 'Listar Canais', () => run('/list', cur())], ['msn', 'Listar Contatos', () => run('/contatos', cur())], '-',
   ['16', 'Enviar Arquivo', () => run('/enviar', cur())], ['85', 'Chat (abrir pvt)', () => MENUS.Comandos().then((m) => m[1][1]())], ['142', 'Janelas Lado-a-Lado', tile], ['143', 'Janelas em Cascata', cascade], '-',
-  ['157', 'Theme Manager', () => dlgTheme()], ['av2', 'Nick / Recado', () => dlgProfile()], ['get', 'Recebidos', () => api('app:openDownloads')], ['33', 'Logs', () => api('app:openLogs')], '-',
-  ['fkeys', 'Atalhos', () => run('/atalhos', cur())], ['89', 'Dicas', () => run('/dicas', cur())], ['about', 'About', () => dlgAbout()], ['83', 'Ajuda?', () => run('/ajuda', cur())]
+  ['157', 'Theme Manager', () => dlgTheme()], ['59', 'Nick / Recado', () => dlgProfile()], ['do', 'Recebidos', () => api('app:openDownloads')], ['7', 'Logs', () => api('app:openLogs')], '-',
+  ['fkeys', 'Atalhos', () => run('/atalhos', cur())], ['99', 'Dicas', () => run('/dicas', cur())], ['75', 'About', () => dlgAbout()], ['83', 'Ajuda?', () => run('/ajuda', cur())]
 ];
 function buildToolbar() {
   const tb = $('#toolbar');

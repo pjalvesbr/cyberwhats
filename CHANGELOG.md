@@ -13,7 +13,7 @@ O CyberWhats usa sempre 3.2.x.y, em homenagem ao CyberScript 3.2.
 - MOTD: "Criado por" no lugar de "Staff".
 - Reações aparecem na própria mensagem (👍2), como no WhatsApp.
 - Botão **Atualizar** em `/list`, `/contatos` e `/recentes`.
-- Ícone novo para Nick / Recado na toolbar.
+- Ícones modernos em alta resolução (nítidos em telas grandes) e botões das janelas maiores.
 
 ## 3.2.0.1 — primeira versão pública
 - Visual do CyberScript 3.2: janelas MDI, switchbar, toolbar, barra de status, tema Padrão (`>>>`), fonte Fixedsys, ícones e sons originais, MOTD estilo BRASnet.
