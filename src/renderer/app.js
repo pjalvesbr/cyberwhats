@@ -1148,6 +1148,8 @@ function renderMsg(w, m, hist = false) {
     if (ln && i === lines.length - 1 && ln.querySelector('.inmedia')) queueMedia(w, m, ln, hist);
     if (i === 0 && ln && !m.fromMe) markNick(ln, nick);
     if (i === 0 && ln) markNew(w, m, ln, hist);
+    // reações guardadas (chegaram antes da janela abrir, ou em outra sessão)
+    if (i === lines.length - 1 && ln && m.reactions) for (const r of Object.values(m.reactions)) setReaction(ln, r.fromMe ? myNick() : cleanNick(r.nick), r.emoji);
     first = first || ln;
   });
   return first;

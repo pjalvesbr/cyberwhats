@@ -45,6 +45,7 @@ export class WhatsAppGo extends EventEmitter {
     this.chats = new Map();
     this.history = new Map();
     this.dirty = new Set();
+    this.pendingReacts = new Map();
     this.loadStore();
     setInterval(() => this.flush(), 5000);
   }
@@ -72,9 +73,17 @@ export class WhatsAppGo extends EventEmitter {
     }
     return this.history.get(jid);
   }
+  applyReaction(o, d) {
+    o.reactions = o.reactions || {};
+    const key = d.fromMe ? 'me' : (d.sender || d.nick || '?');
+    if (d.emoji) o.reactions[key] = { nick: d.nick || '', emoji: d.emoji, fromMe: !!d.fromMe }; else delete o.reactions[key];
+    this.dirty.add(o.chat);
+  }
   store(e) {
     const h = this.getHistory(e.chat);
     if (h.some((x) => x.id === e.id)) return false;
+    const pk = e.chat + '|' + e.id;
+    if (this.pendingReacts.has(pk)) { for (const d of this.pendingReacts.get(pk)) this.applyReaction(e, d); this.pendingReacts.delete(pk); }
     h.push(e);
     if (h.length > 1 && h[h.length - 2].ts > e.ts) h.sort((a, b) => a.ts - b.ts);
     if (h.length > HISTORY_CAP) h.splice(0, h.length - HISTORY_CAP);
@@ -227,8 +236,11 @@ export class WhatsAppGo extends EventEmitter {
         break;
       }
       case 'reaction': {
+        // guarda a reação na mensagem (aparece mesmo se a janela abrir depois); se a mensagem ainda não chegou, espera por ela
         const o = this.getHistory(d.chat).find((x) => x.id === d.targetId);
-        this.emit('wa', { type: 'reaction', ...d, target: o ? String(o.text || o.caption || '').slice(0, 40) : '' });
+        if (o) this.applyReaction(o, d);
+        else { const k = d.chat + '|' + d.targetId; const l = this.pendingReacts.get(k) || []; l.push(d); this.pendingReacts.set(k, l); if (this.pendingReacts.size > 5000) this.pendingReacts.delete(this.pendingReacts.keys().next().value); }
+        if (d.live !== false) this.emit('wa', { type: 'reaction', ...d, target: o ? String(o.text || o.caption || '').slice(0, 40) : '' });
         break;
       }
       case 'group': this.emit('wa', { type: 'group', group: d }); break;

@@ -11,7 +11,7 @@ O CyberWhats usa sempre 3.2.x.y, em homenagem ao CyberScript 3.2.
 - Respostas cortadas terminam com "..." (o motor agora manda o texto citado completo).
 - Ícone de Enviar Arquivo sem o fundo escuro.
 - MOTD: "Criado por" no lugar de "Staff".
-- Reações aparecem na própria mensagem (👍2), como no WhatsApp.
+- Reações aparecem na própria mensagem (👍2), como no WhatsApp, e ficam guardadas: aparecem mesmo que cheguem com a janela fechada ou na sincronização.
 - Botão **Atualizar** em `/list`, `/contatos` e `/recentes`.
 - Ícones modernos em alta resolução (nítidos em telas grandes) e botões das janelas maiores.
 - Mensagens de erro do WhatsApp traduzidas (ex.: "Você não tem permissão para renomear o grupo: só os admins do grupo podem."); o detalhe técnico vai para `logs\erros.log`.

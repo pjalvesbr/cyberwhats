@@ -289,9 +289,8 @@ func entryOf(evt *events.Message, live bool) map[string]any {
 		return nil
 	}
 	if r := m.GetReactionMessage(); r != nil {
-		if live {
-			emit("reaction", map[string]any{"chat": chat.String(), "emoji": r.GetText(), "nick": e["nick"], "fromMe": info.IsFromMe, "targetId": r.GetKey().GetID()})
-		}
+		// reações também vêm na sincronização do histórico: a ponte guarda e só mostra as ao vivo
+		emit("reaction", map[string]any{"chat": chat.String(), "emoji": r.GetText(), "nick": e["nick"], "sender": e["sender"], "fromMe": info.IsFromMe, "targetId": r.GetKey().GetID(), "live": live})
 		return nil
 	}
 	switch {
