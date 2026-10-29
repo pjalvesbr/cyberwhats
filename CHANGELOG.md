@@ -14,6 +14,7 @@ O CyberWhats usa sempre 3.2.x.y, em homenagem ao CyberScript 3.2.
 - Reações aparecem na própria mensagem (👍2), como no WhatsApp.
 - Botão **Atualizar** em `/list`, `/contatos` e `/recentes`.
 - Ícones modernos em alta resolução (nítidos em telas grandes) e botões das janelas maiores.
+- Opção de ícones **modernos** ou **clássicos** do CyberScript (Ferramentas > Temas / Cores, ou `/icones`).
 
 ## 3.2.0.1 — primeira versão pública
 - Visual do CyberScript 3.2: janelas MDI, switchbar, toolbar, barra de status, tema Padrão (`>>>`), fonte Fixedsys, ícones e sons originais, MOTD estilo BRASnet.

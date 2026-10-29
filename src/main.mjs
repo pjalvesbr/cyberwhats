@@ -30,7 +30,7 @@ const cfgFile = path.join(dataDir, 'config.json');
 const defaults = {
   timestamp: true, sounds: true, readReceipts: true, typing: true, notifyPopups: true,
   awayAutoReply: false, showMotd: true, showRecent: true, inlineMedia: true, autoDownload: true, awayMessage: 'Estou away no momento, respondo assim que voltar.',
-  notify: [], ignore: [], autojoin: [], nicklistWidth: 140, fontSize: 16, uiSize: 13, theme: 'padrao', engine: 'go'
+  notify: [], ignore: [], autojoin: [], nicklistWidth: 140, fontSize: 16, uiSize: 13, theme: 'padrao', iconSet: 'modern', engine: 'go'
 };
 const loadCfg = () => { try { return { ...defaults, ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')) }; } catch { return { ...defaults }; } };
 let cfg = loadCfg();

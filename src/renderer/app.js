@@ -87,8 +87,9 @@ class Win {
     this.activity = null; this.lines = 0; this.nicks = []; this.hist = []; this.histPos = -1;
     this.quote = null; this.group = null;
     const el = this.el = h('div', { class: 'mdiwin' });
-    const icon = { status: S.conn === 'online' ? 'online' : 'offline', channel: '85', query: 'userl', list: '38', custom: '7' }[type] || 'cyber';
-    this.title = h('div', { class: 'mtitle' }, `<img src="assets/icons/${icon}.png"><span class="mt"></span>`);
+    const icon = { status: S.conn === 'online' ? 'online' : 'offline', channel: '85', query: 'query', list: '38', custom: 'custom' }[type] || 'cyber';
+    this.iconName = icon;
+    this.title = h('div', { class: 'mtitle' }, `<img src="${iconSrc(icon)}"><span class="mt"></span>`);
     for (const [k, g] of [['min', 'g-min'], ['max', 'g-max'], ['close', 'g-close']]) {
       const b = h('button', { class: 'cap' + (k === 'close' ? ' close' : '') }, `<span class="${g}"></span>`);
       b.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -107,7 +108,7 @@ class Win {
     const n = S.order.length;
     Object.assign(el.style, { left: 20 * (n % 8) + 'px', top: 20 * (n % 8) + 'px', width: '70%', height: '70%' });
     $('#mdi').appendChild(el);
-    this.sw = h('div', { class: 'sw', title: name }, `<img src="assets/icons/${icon}.png"><span></span>`);
+    this.sw = h('div', { class: 'sw', title: name }, `<img src="${iconSrc(icon)}"><span></span>`);
     this.sw.addEventListener('click', () => {
       // clicar de novo no botão da janela ativa volta para a janela anterior
       if (S.active === this.id && !this.el.classList.contains('min')) {
@@ -222,7 +223,7 @@ class Win {
     this.sw.title = t;
     if (S.active === this.id) updateAppTitle();
   }
-  setIcon(name) { $('img', this.title).src = $('img', this.sw).src = `assets/icons/${name}.png`; }
+  setIcon(name) { this.iconName = name; $('img', this.title).src = $('img', this.sw).src = iconSrc(name); }
   addDay(d, before) {
     const hoje = new Date(), ontem = new Date(Date.now() - 864e5);
     const dia = d.toLocaleDateString('pt-BR', { weekday: 'long' });
@@ -656,7 +657,7 @@ function fillMenu(p, items, level) {
     const [label, fn, disabled, opts = {}] = it;
     const sub = Array.isArray(opts.children) && opts.children.length;
     const d = h('div', { class: 'mi' + (disabled ? ' dis' : '') + (opts.checked ? ' chk' : '') + (sub ? ' sub' : '') });
-    d.innerHTML = (opts.icon ? `<img src="assets/icons/${opts.icon}.png">` : '') + `<span>${esc(label)}</span>` + (opts.key ? `<span class="k">${esc(opts.key)}</span>` : '') + (sub ? '<span class="arr">▶</span>' : '');
+    d.innerHTML = (opts.icon ? `<img src="${iconSrc(opts.icon)}">` : '') + `<span>${esc(label)}</span>` + (opts.key ? `<span class="k">${esc(opts.key)}</span>` : '') + (sub ? '<span class="arr">▶</span>' : '');
     d.addEventListener('mouseenter', () => {
       closeSubmenus(level + 1);
       p.querySelectorAll('.mi.hover').forEach((x) => x.classList.remove('hover'));
@@ -701,8 +702,8 @@ const MENUS = {
     ['Desconectar', () => run('/disconnect', st()), S.conn === 'offline'],
     ['Mostrar WhatsApp Web original', () => run('/web', st()), S.conn === 'offline'],
     '-',
-    ['Abrir pasta de logs', () => api('app:openLogs'), false, { icon: '7' }],
-    ['Abrir pasta de recebidos', () => api('app:openDownloads'), false, { icon: 'do' }],
+    ['Abrir pasta de logs', () => api('app:openLogs'), false, { icon: 'logs' }],
+    ['Abrir pasta de recebidos', () => api('app:openDownloads'), false, { icon: 'recebidos' }],
     '-',
     ['Encerrar sessão (deslogar aparelho)', () => run('/logout', st())],
     ['Sair', () => api('win:close'), false, { key: 'Alt+F4' }]
@@ -726,13 +727,13 @@ const MENUS = {
   ],
   Ferramentas: () => [
     ['Opções...', dlgOptions, false, { icon: '21', key: 'Alt+O' }],
-    ['Notify List...', dlgNotify, false, { icon: 'online' }],
+    ['Notify List...', dlgNotify, false, { icon: 'notify' }],
     ['Ignore List...', dlgIgnore, false, { icon: '147' }],
-    ['Temas / Cores...', dlgTheme, false, { icon: '146' }],
-    ['Editor de scripts...', () => scriptEditor(), false, { icon: 'cyber', key: 'Alt+R' }],
+    ['Temas / Cores...', dlgTheme, false, { icon: 'cores' }],
+    ['Editor de scripts...', () => scriptEditor(), false, { icon: 'editor', key: 'Alt+R' }],
     ['Recarregar scripts', () => loadScripts(true, cur())],
     '-',
-    ['Mudar nick (nome do perfil)...', () => askRun('Nick', 'Novo nick (nome no WhatsApp):', S.me?.name || '', (v) => run('/nick ' + v, cur())), S.conn !== 'online', { icon: '59' }],
+    ['Mudar nick (nome do perfil)...', () => askRun('Nick', 'Novo nick (nome no WhatsApp):', S.me?.name || '', (v) => run('/nick ' + v, cur())), S.conn !== 'online', { icon: 'nick' }],
     ['Meu apelido local...', () => S.me ? aliasDialog(S.me.id, myNick()) : null, !S.me],
     ['Mudar recado...', () => askRun('Recado', 'Novo recado (status):', '', (v) => run('/recado ' + v, cur())), S.conn !== 'online']
   ],
@@ -755,9 +756,9 @@ const MENUS = {
     ['Comandos', () => run('/ajuda', cur()), false, { icon: '83' }],
     ['Atalhos', () => run('/atalhos', cur()), false, { icon: 'fkeys' }],
     ['Linguagem dos scripts', () => run('/ajuda scripts', cur()), false],
-    ['Dicas', () => run('/dicas', cur()), false, { icon: '99' }],
+    ['Dicas', () => run('/dicas', cur()), false, { icon: 'dicas' }],
     '-',
-    ['Sobre o CyberWhats...', dlgAbout, false, { icon: '75' }]
+    ['Sobre o CyberWhats...', dlgAbout, false, { icon: 'about' }]
   ]
 };
 function buildMenubar() {
@@ -788,17 +789,28 @@ function buildMenubar() {
 // toolbar baseada em sistema/tb1.txt do CyberScript
 const TOOLBAR = [
   ['144', 'Conectar / Desconectar', () => run(S.conn === 'offline' ? '/server' : '/disconnect', st())], '-',
-  ['21', 'Opções', () => dlgOptions()], ['20', 'Pasta de Canais', () => dlgFavorites()], ['online', 'Notify+', () => dlgNotify()], ['147', 'Ignore+', () => dlgIgnore()], '-',
-  ['35', 'Auto-Join', () => dlgAutojoin()], ['62', 'Informações do grupo', () => cmdInfo(cur())], ['146', 'Cores', () => dlgTheme()], ['38', 'Listar Canais', () => run('/list', cur())], ['msn', 'Listar Contatos', () => run('/contatos', cur())], '-',
+  ['21', 'Opções', () => dlgOptions()], ['20', 'Pasta de Canais', () => dlgFavorites()], ['notify', 'Notify+', () => dlgNotify()], ['147', 'Ignore+', () => dlgIgnore()], '-',
+  ['35', 'Auto-Join', () => dlgAutojoin()], ['ginfo', 'Informações do grupo', () => cmdInfo(cur())], ['cores', 'Cores', () => dlgTheme()], ['38', 'Listar Canais', () => run('/list', cur())], ['msn', 'Listar Contatos', () => run('/contatos', cur())], '-',
   ['16', 'Enviar Arquivo', () => run('/enviar', cur())], ['85', 'Chat (abrir pvt)', () => MENUS.Comandos().then((m) => m[1][1]())], ['142', 'Janelas Lado-a-Lado', tile], ['143', 'Janelas em Cascata', cascade], '-',
-  ['157', 'Theme Manager', () => dlgTheme()], ['59', 'Nick / Recado', () => dlgProfile()], ['do', 'Recebidos', () => api('app:openDownloads')], ['7', 'Logs', () => api('app:openLogs')], '-',
-  ['fkeys', 'Atalhos', () => run('/atalhos', cur())], ['99', 'Dicas', () => run('/dicas', cur())], ['75', 'About', () => dlgAbout()], ['83', 'Ajuda?', () => run('/ajuda', cur())]
+  ['157', 'Theme Manager', () => dlgTheme()], ['nick', 'Nick / Recado', () => dlgProfile()], ['recebidos', 'Recebidos', () => api('app:openDownloads')], ['logs', 'Logs', () => api('app:openLogs')], '-',
+  ['fkeys', 'Atalhos', () => run('/atalhos', cur())], ['dicas', 'Dicas', () => run('/dicas', cur())], ['about', 'About', () => dlgAbout()], ['83', 'Ajuda?', () => run('/ajuda', cur())]
 ];
+// ícones: conjunto moderno (padrão) ou clássico do CyberScript; alguns papéis usam desenhos diferentes em cada conjunto
+const ICON_ROLES = { notify: ['online', '59'], nick: ['59', 'av2'], ginfo: ['62', '122'], cores: ['146', '148'], recebidos: ['do', 'get'], logs: ['7', '33'], dicas: ['99', '89'], about: ['75', 'about'], query: ['userl', 'av'], editor: ['cyber', '83'], custom: ['7', '89'] };
+function iconSrc(n) {
+  const cl = S.cfg?.iconSet === 'classic';
+  const r = ICON_ROLES[n];
+  return `assets/${cl ? 'icons-classic' : 'icons'}/${r ? r[cl ? 1 : 0] : n}.png`;
+}
+function refreshIcons() {
+  document.querySelectorAll('img[data-icon]').forEach((i) => { i.src = iconSrc(i.dataset.icon); });
+  for (const w of S.wins.values()) if (w.iconName) w.setIcon(w.iconName);
+}
 function buildToolbar() {
   const tb = $('#toolbar');
   for (const t of TOOLBAR) {
     if (t === '-') { tb.appendChild(h('div', { class: 'tsep' })); continue; }
-    const b = h('div', { class: 'tb', title: t[1] }, `<img src="assets/icons/${t[0]}.png" draggable="false">`);
+    const b = h('div', { class: 'tb', title: t[1] }, `<img src="${iconSrc(t[0])}" data-icon="${t[0]}" draggable="false">`);
     b.addEventListener('click', t[2]);
     tb.appendChild(b);
   }
@@ -904,10 +916,11 @@ function dlgTheme() {
   dialog({
     title: 'Theme Manager', width: 340,
     body: `<fieldset><legend>Tema</legend><label><input type="radio" name="t" value="padrao" ${S.cfg.theme !== 'dark' && S.cfg.theme !== 'classico' ? 'checked' : ''}> Padrão (CyberScript)</label><label><input type="radio" name="t" value="classico" ${S.cfg.theme === 'classico' ? 'checked' : ''}> Clássico (branco)</label><label><input type="radio" name="t" value="dark" ${S.cfg.theme === 'dark' ? 'checked' : ''}> Dark</label></fieldset>
+    <fieldset><legend>Ícones</legend><label><input type="radio" name="ic" value="modern" ${S.cfg.iconSet !== 'classic' ? 'checked' : ''}> Modernos</label><label><input type="radio" name="ic" value="classic" ${S.cfg.iconSet === 'classic' ? 'checked' : ''}> Clássicos (CyberScript)</label></fieldset>
     <fieldset><legend>Tamanho</legend><label>Fonte do bate-papo: <select data-k="fontSize"><option>12</option><option>14</option><option>16</option><option>18</option><option>20</option><option>24</option></select></label>
     <label>Interface (menus, barras, listas): <select data-k="uiSize"><option value="11">Pequena (clássica)</option><option value="13">Normal</option><option value="15">Grande</option><option value="17">Muito grande</option><option value="20">Enorme</option></select></label></fieldset>`,
     onOpen: (d) => { $('[data-k=fontSize]', d).value = String(S.cfg.fontSize || 16); $('[data-k=uiSize]', d).value = String(S.cfg.uiSize || 13); },
-    buttons: [['OK', (d) => setCfg({ theme: $('input[name=t]:checked', d).value, fontSize: +$('[data-k=fontSize]', d).value, uiSize: +$('[data-k=uiSize]', d).value })], ['Cancelar', null]]
+    buttons: [['OK', (d) => setCfg({ theme: $('input[name=t]:checked', d).value, iconSet: $('input[name=ic]:checked', d).value, fontSize: +$('[data-k=fontSize]', d).value, uiSize: +$('[data-k=uiSize]', d).value })], ['Cancelar', null]]
   });
 }
 function applyTheme() {
@@ -927,6 +940,7 @@ function applyTheme() {
   // paleta do chat em variáveis CSS: trocar o tema recolore também as linhas já escritas
   const DARK = ['#000000', '#d0d0d0', '#7f9cff', '#3cc83c', '#ff5050', '#e07050', '#e070e0', '#ff9c30', '#ffff40', '#60ff60', '#30c8c8', '#60ffff', '#58a8ff', '#ff60ff', '#a8a8a8', '#606060'];
   window.F.PALETTE.forEach((c, i) => r.setProperty('--c' + i, dark ? DARK[i] : c));
+  refreshIcons();
 }
 function dlgAbout() {
   api('app:version').then((v) => dialog({
@@ -1330,7 +1344,7 @@ const HELP = [
   ['/nick <novo>', 'muda seu nome no WhatsApp'], ['/apelido <alvo> <apelido>', 'apelido local p/ contato, #canal ou "eu" (só no CyberWhats)'], ['/meunick <apelido>', 'seu apelido local'], ['/recado <texto>', 'muda seu recado (status)'], ['/away [msg] /back', 'marca/desmarca away'],
   ['/notify <nick>', 'avisa quando o contato ficar online (/unnotify desfaz)'], ['/ignore <nick>', 'ignora mensagens (/unignore desfaz)'], ['/enviar', 'envia arquivo (DCC Send) — ou arraste para a janela'],
   ['/r <texto>', 'responde ao último pvt'], ['/server [número]', 'conecta (QR ou código)'], ['/disconnect /logout', 'desconecta / encerra a sessão'],
-  ['/web', 'mostra o WhatsApp Web original (só no motor antigo)'], ['/interface <px> /fonte <px>', 'tamanho da interface / do bate-papo'], ['/clear', 'limpa a janela'], ['/log /recebidos', 'abre pastas'], ['/tile /cascade', 'organiza as janelas'], ['/dicas', 'dica do CyberScript'],
+  ['/web', 'mostra o WhatsApp Web original (só no motor antigo)'], ['/interface <px> /fonte <px>', 'tamanho da interface / do bate-papo'], ['/icones [moderno|classico]', 'alterna entre ícones modernos e clássicos'], ['/clear', 'limpa a janela'], ['/log /recebidos', 'abre pastas'], ['/tile /cascade', 'organiza as janelas'], ['/dicas', 'dica do CyberScript'],
   ['/motd', 'mostra a mensagem do dia (MOTD)'], ['/lusers', 'estatísticas: canais, contatos, usuários'], ['/echo <texto>', 'escreve só na sua tela'], ['/say <texto>', 'envia texto (mesmo começando com /)'],
   ['/opcoes', 'abre as opções (Alt+O)'], ['/about', 'sobre o CyberWhats'], ['/atalhos', 'lista os atalhos de teclado'], ['/ajuda scripts', 'referência da linguagem CyberWhats Script'],
   ['/scripts [nome]', 'abre o editor de scripts (Alt+R)'], ['/recarregar', 'recarrega todos os scripts (.cws)'], ['//comando', 'executa avaliando $identificadores e %variáveis'],
@@ -1534,6 +1548,11 @@ async function run(line, w, opts = {}) {
       case 'interface': case 'ui': { const n = parseInt(args, 10); if (n >= 9 && n <= 28) { await setCfg({ uiSize: n }); return w.add(T.info(`Tamanho da interface: ${n}px`)); } return dlgTheme(); }
       case 'fonte': case 'font': { const n = parseInt(args, 10); if (n >= 8 && n <= 40) { await setCfg({ fontSize: n }); return w.add(T.info(`Fonte do bate-papo: ${n}px`)); } return dlgTheme(); }
       case 'raw': case 'quote': return w.add(T.err('Não existe RAW no WhatsApp :)'));
+      case 'icones': case 'icons': {
+        const v = /^cl/i.test(a1) ? 'classic' : /^mo/i.test(a1) ? 'modern' : (S.cfg.iconSet === 'classic' ? 'modern' : 'classic');
+        await setCfg({ iconSet: v });
+        return w.add(T.info(`Ícones: ${C}12${v === 'classic' ? 'clássicos (CyberScript)' : 'modernos'}`));
+      }
       case 'recentes': case 'recent': case 'recents': {
         if (/^(on|off)$/i.test(a1)) { await setCfg({ showRecent: /on/i.test(a1) }); return w.add(T.info(`Contatos recentes ao conectar: ${C}12${S.cfg.showRecent !== false ? 'LIGADO' : 'desligado'}`)); }
         return cmdRecent(a1 || 30);
