@@ -27,9 +27,9 @@
 {center}{b}USE ESTE SERVIÇO COMO UM PRIVILÉGIO, NÃO COMO UM DIREITO{b}
 ----------------------------------------------------------------------------
 
-{b}Staff:{b}
+{b}Criado por:{b}
 
-        - Bone <johnny.alves@gmail.com>
+        - Paulo Johnny Alves <johnny.alves@gmail.com>
 
 -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 

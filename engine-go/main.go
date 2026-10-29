@@ -371,11 +371,11 @@ func entryOf(evt *events.Message, live bool) map[string]any {
 					qt = "[Arquivo]"
 				}
 			}
-			if len([]rune(qt)) > 60 {
-				qt = string([]rune(qt)[:60])
+			if len([]rune(qt)) > 300 {
+				qt = string([]rune(qt)[:300])
 			}
 			qp, _ := types.ParseJID(ci.GetParticipant())
-			e["quote"] = map[string]any{"nick": nameOf(qp, ""), "text": qt}
+			e["quote"] = map[string]any{"nick": nameOf(qp, ""), "text": qt, "id": ci.GetStanzaID()}
 		}
 		if mj := ci.GetMentionedJID(); len(mj) > 0 {
 			ms := []map[string]any{}

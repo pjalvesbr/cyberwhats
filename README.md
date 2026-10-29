@@ -135,7 +135,7 @@ O CyberWhats sempre usa **3.2.x.y**, em homenagem ao CyberScript 3.2. Histórico
 Projeto **não-oficial**, sem afiliação com o WhatsApp/Meta. Clientes não-oficiais podem violar os
 Termos do WhatsApp e há risco de restrição da conta — use por sua conta e risco e evite automações/spam.
 
-Versão para WhatsApp por **Paulo Johnny Alves** (johnny.alves@gmail.com) — [www.cyberwhats.org](https://www.cyberwhats.org).
+Por **Paulo Johnny Alves** (johnny.alves@gmail.com) — [www.cyberwhats.org](https://www.cyberwhats.org).
 
 Baseado no **CyberScript 3.2**: artes, ícones, sons, temas, frases e o estilo visual são criação da equipe original do CyberScript — todos os créditos a eles. Fonte: Fixedsys Excelsior 3.01.
 Motor: [whatsmeow](https://github.com/tulir/whatsmeow) (MPL-2.0).

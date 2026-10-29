@@ -931,7 +931,7 @@ function applyTheme() {
 function dlgAbout() {
   api('app:version').then((v) => dialog({
     title: 'About - CyberWhats', width: 420,
-    body: `<img class="about-logo" src="assets/about.png" width="389"><div style="text-align:center;line-height:1.6"><b>CyberWhats ${esc(v)}</b><br>Versão para WhatsApp por <b>Paulo Johnny Alves</b><br><a class="url" data-url="mailto:johnny.alves@gmail.com">johnny.alves@gmail.com</a> · <a class="url" data-url="https://www.cyberwhats.org">www.cyberwhats.org</a><br><br><i>"Saudades do #brasil na BRASnet..."</i><br><br><span style="color:#808080">Baseado no <b>CyberScript 3.2</b>: artes, ícones, sons, temas, frases e todo o estilo visual são criação da equipe original do CyberScript — os créditos são todos deles. Esta é só uma homenagem.<br>Fonte: Fixedsys Excelsior 3.01 · Motor: whatsmeow<br>Projeto não-oficial, sem afiliação com o WhatsApp/Meta.</span></div>`
+    body: `<img class="about-logo" src="assets/about.png" width="389"><div style="text-align:center;line-height:1.6"><b>CyberWhats ${esc(v)}</b><br>Por <b>Paulo Johnny Alves</b><br><a class="url" data-url="mailto:johnny.alves@gmail.com">johnny.alves@gmail.com</a> · <a class="url" data-url="https://www.cyberwhats.org">www.cyberwhats.org</a><br><br><i>"Saudades do #brasil na BRASnet..."</i><br><br><span style="color:#808080">Baseado no <b>CyberScript 3.2</b>: artes, ícones, sons, temas, frases e todo o estilo visual são criação da equipe original do CyberScript — os créditos são todos deles. Esta é só uma homenagem.<br>Fonte: Fixedsys Excelsior 3.01 · Motor: whatsmeow<br>Projeto não-oficial, sem afiliação com o WhatsApp/Meta.</span></div>`
   }));
 }
 function dlgProfile() {
@@ -1044,11 +1044,12 @@ function setReaction(ln, who, emoji) {
   sp.title = [...ln._reacts].map(([n, e]) => `${n}: ${e}`).join('\n');
 }
 // texto numa linha só, cortado no fim de uma palavra
-function shortText(t, max = 60) {
+function shortText(t, max = 60, cutAlready = false) {
   t = strip(waToCodes(String(t || ''))).replace(/\s+/g, ' ').trim();
-  if (t.length <= max) return t;
-  const cut = t.slice(0, max);
-  return (cut.lastIndexOf(' ') > max * 0.6 ? cut.slice(0, cut.lastIndexOf(' ')) : cut) + '…';
+  if (t.length <= max && !cutAlready) return t;
+  let cut = t.slice(0, max);
+  if (cut.lastIndexOf(' ') > max * 0.6 || (cutAlready && cut.lastIndexOf(' ') > 0)) cut = cut.slice(0, cut.lastIndexOf(' '));
+  return cut.replace(/[\s.,;:!?-]+$/, '') + '...';
 }
 function senderNick(w, m) {
   if (m.fromMe) return myNick();
@@ -1086,7 +1087,7 @@ function renderMsg(w, m, hist = false) {
     else s = m.fromMe ? T.textQuerySelf(nick, t) : T.textQuery(nick, t);
     const ln = w.add(s, { date, hist, id: m.id, nick, jid: m.fromMe ? null : m.sender, html: i === lines.length - 1 ? html : '', activity: hist ? null : hl ? 'hl' : 'msg', forceScroll: m.fromMe && !hist, indent, cont: i > 0 });
     // resposta (citação): linha cinza logo abaixo da mensagem, dizendo a quem respondeu
-    if (i === lines.length - 1 && ln && m.quote) w.add(`${C}14└ respondendo ${cleanNick(m.quote.nick)}: ${shortText(m.quote.text, 80)}`, { date, hist, indent, cont: true, cls: 'quote' });
+    if (i === lines.length - 1 && ln && m.quote) w.add(`${C}14└ respondendo ${cleanNick(m.quote.nick)}: ${shortText(m.quote.text, 80, Array.from(m.quote.text || '').length === 60)}`, { date, hist, indent, cont: true, cls: 'quote' });
     if (ln && i === lines.length - 1 && ln.querySelector('.inmedia')) queueMedia(w, m, ln, hist);
     if (i === 0 && ln && !m.fromMe) markNick(ln, nick);
     if (i === 0 && ln) markNew(w, m, ln, hist);
@@ -1181,7 +1182,7 @@ function onWa(ev) {
       const lns = ev.targetId ? w.buf.querySelectorAll(`.ln[data-id="${CSS.escape(ev.targetId)}"]`) : [];
       if (lns.length) { setReaction(lns[lns.length - 1], who, ev.emoji); break; }
       if (!ev.emoji) break;
-      w.add(T.action(who, `reagiu com ${ev.emoji}${ev.target ? ` a "${shortText(ev.target, 50)}"` : ''}`), { activity: 'event' });
+      w.add(T.action(who, `reagiu com ${ev.emoji}${ev.target ? ` a "${shortText(ev.target, 50, ev.target.length === 40)}"` : ''}`), { activity: 'event' });
       break;
     }
     case 'presence': {

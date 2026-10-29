@@ -125,7 +125,7 @@ app.whenReady().then(() => {
   h('app:version', () => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).cwVersion || app.getVersion(); } catch { return app.getVersion(); } });
   const motdFile = path.join(dataDir, 'motd.txt');
   // MOTD padrão antigo (não editado pelo usuário) é trocado pelo novo
-  const OLD_MOTDS = ['41b2f9839bbed7ce80301b755e44d62660225a97'];
+  const OLD_MOTDS = ['41b2f9839bbed7ce80301b755e44d62660225a97', '0fcb8177a93d4adafb3f2189a545c3c915d9820c'];
   const ensureMotd = () => {
     const def = path.join(__dirname, 'renderer/assets/motd-default.txt');
     if (!fs.existsSync(motdFile)) return fs.copyFileSync(def, motdFile);
