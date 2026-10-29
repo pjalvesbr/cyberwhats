@@ -7,7 +7,8 @@ O CyberWhats usa sempre 3.2.x.y, em homenagem ao CyberScript 3.2.
 - Linha **"mensagens novas"** marcando onde começam as mensagens que chegaram desde a última vez; a janela abre mostrando essa linha.
 - Separador de dia nas conversas (Hoje, Ontem, data).
 - Mensagens com várias linhas e linhas longas alinhadas com o começo do texto, sem repetir o horário.
-- Respostas (citações) numa linha própria acima da mensagem, cortadas no fim da palavra.
+- Respostas (citações) numa linha própria logo abaixo da mensagem ("└ respondendo Fulano: ..."), cortadas no fim da palavra.
+- Botões das janelas sem zoom (nítidos em qualquer tamanho de interface).
 - Reações aparecem na própria mensagem (👍2), como no WhatsApp.
 - Botão **Atualizar** em `/list`, `/contatos` e `/recentes`.
 - Ícone novo para Nick / Recado na toolbar.

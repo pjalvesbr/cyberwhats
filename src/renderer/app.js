@@ -1029,8 +1029,7 @@ function markNew(w, m, ln, hist) {
   if (!since || m.ts <= since) return;
   const sep = h('div', { class: 'ln newsep' });
   sep.innerHTML = codesToHtml(`${C}4—————————— mensagens novas ——————————`);
-  let at = ln; while (at.previousSibling && at.previousSibling.classList?.contains('quote')) at = at.previousSibling;
-  w.buf.insertBefore(sep, at);
+  w.buf.insertBefore(sep, ln);
   w._newMark = sep; w.lines++;
 }
 function setReaction(ln, who, emoji) {
@@ -1086,11 +1085,8 @@ function renderMsg(w, m, hist = false) {
     else if (w.type === 'channel') s = m.fromMe ? T.textChanSelf(nick, adm, t) : T.textChan(nick, adm, t, hl);
     else s = m.fromMe ? T.textQuerySelf(nick, t) : T.textQuery(nick, t);
     const ln = w.add(s, { date, hist, id: m.id, nick, jid: m.fromMe ? null : m.sender, html: i === lines.length - 1 ? html : '', activity: hist ? null : hl ? 'hl' : 'msg', forceScroll: m.fromMe && !hist, indent, cont: i > 0 });
-    // resposta (citação): linha cinza logo acima, como o balão citado do WhatsApp
-    if (i === 0 && ln && m.quote) {
-      const q = w.add(`${C}14┌ ${cleanNick(m.quote.nick)}: ${shortText(m.quote.text, 90)}`, { date, hist, indent, cont: true, cls: 'quote' });
-      if (q) ln.parentNode.insertBefore(q, ln);
-    }
+    // resposta (citação): linha cinza logo abaixo da mensagem, dizendo a quem respondeu
+    if (i === lines.length - 1 && ln && m.quote) w.add(`${C}14└ respondendo ${cleanNick(m.quote.nick)}: ${shortText(m.quote.text, 80)}`, { date, hist, indent, cont: true, cls: 'quote' });
     if (ln && i === lines.length - 1 && ln.querySelector('.inmedia')) queueMedia(w, m, ln, hist);
     if (i === 0 && ln && !m.fromMe) markNick(ln, nick);
     if (i === 0 && ln) markNew(w, m, ln, hist);
