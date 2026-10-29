@@ -122,6 +122,7 @@ app.whenReady().then(() => {
   h('app:openLogs', () => shell.openPath(path.join(dataDir, 'logs')));
   h('app:openDownloads', () => { fs.mkdirSync(path.join(downloadDir, 'Recebidos'), { recursive: true }); return shell.openPath(path.join(downloadDir, 'Recebidos')); });
   h('app:openUrl', (u) => shell.openExternal(u));
+  h('app:logError', (txt) => { try { fs.mkdirSync(path.join(dataDir, 'logs'), { recursive: true }); fs.appendFileSync(path.join(dataDir, 'logs', 'erros.log'), `[${new Date().toISOString()}] ${String(txt).slice(0, 2000)}\r\n`); } catch {} return true; });
   h('app:version', () => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).cwVersion || app.getVersion(); } catch { return app.getVersion(); } });
   const motdFile = path.join(dataDir, 'motd.txt');
   // MOTD padrão antigo (não editado pelo usuário) é trocado pelo novo

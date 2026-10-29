@@ -294,7 +294,7 @@ class Win {
     if (im && !window.getSelection()?.toString()) {
       const full = im.querySelector('img.mfull');
       if (full && !im.classList.contains('video')) { dialog({ title: 'Mídia', width: Math.min(innerWidth - 60, Math.max(320, full.naturalWidth + 40)), body: `<img src="${full.src}" style="display:block;max-width:100%;max-height:${innerHeight - 180}px;margin:0 auto">`, buttons: [['Salvar / abrir', () => api('wa:open', im.dataset.chat, im.dataset.id)], ['Fechar', null]] }); }
-      else api('wa:open', im.dataset.chat, im.dataset.id).catch((err) => this.add(T.err('Erro ao abrir: ' + err.message)));
+      else api('wa:open', im.dataset.chat, im.dataset.id).catch((err) => this.add(T.err(friendlyError(err, 'abrir a mídia'))));
       return;
     }
     const a = e.target.closest('a.url');
@@ -303,7 +303,7 @@ class Win {
     if (m) {
       m.textContent = '(baixando...)';
       api('wa:open', m.dataset.chat, m.dataset.id).then((f) => { m.textContent = '(abrir)'; this.add(T.info(`Arquivo salvo em: ${C}12${f}`)); })
-        .catch((err) => { m.textContent = '(abrir)'; this.add(T.err('Erro ao baixar: ' + err.message)); });
+        .catch((err) => { m.textContent = '(abrir)'; this.add(T.err(friendlyError(err, 'baixar o arquivo'))); });
     }
   }
   bufDbl(e) {
@@ -339,7 +339,7 @@ class Win {
       if (v && this.buf) { this.buf.scrollTop = this.buf.scrollHeight; this.atBottom = true; }
       if (v.trim()) { this.hist.push(v); if (this.hist.length > 50) this.hist.shift(); }
       this.histPos = -1;
-      if (v) (async () => { for (const line of v.split(/\r?\n/)) await inputLine(line, this); })().catch((err) => this.add(T.err(err.message || String(err))));
+      if (v) (async () => { for (const line of v.split(/\r?\n/)) await inputLine(line, this); })().catch((err) => this.add(T.err(friendlyError(err))));
       e.preventDefault();
     } else if (e.key === 'ArrowUp') {
       if (!this.hist.length) return;
@@ -361,22 +361,27 @@ class Win {
     }
   }
   complete() {
-    const ed = this.edit, pos = ed.selectionStart, before = ed.value.slice(0, pos);
-    const m = /(\S+)$/.exec(before); if (!m) return;
-    const frag = m[1].toLowerCase();
-    if (!this._tab || this._tab.frag !== frag) {
+    const ed = this.edit, pos = ed.selectionStart;
+    // Tab de novo logo depois de completar: passa para o próximo nick da lista
+    const cycling = !!(this._tab && this._tab.end === pos && ed.value.slice(this._tab.start, pos) === this._tab.inserted);
+    if (cycling) this._tab.i = (this._tab.i + 1) % this._tab.list.length;
+    else {
+      const m = /(\S+)$/.exec(ed.value.slice(0, pos)); if (!m) return;
+      let frag = m[1], pre = '';
+      if (frag.startsWith('@')) { pre = '@'; frag = frag.slice(1); } // @nick = menção
+      const f = frag.toLowerCase();
       let pool = this.type === 'channel' ? this.nicks.map((n) => n.nick) : this.type === 'query' ? [this.name] : [...S.nickIdx.keys()];
-      if (frag.startsWith('#')) pool = S.chats.filter((c) => c.group).map((c) => chanOf(c.id, c.name));
-      this._tab = { frag, list: pool.filter((n) => n.toLowerCase().startsWith(frag)), i: 0, start: pos - m[1].length };
-      if (!this._tab.list.length) return;
-    } else this._tab.i = (this._tab.i + 1) % this._tab.list.length;
-    const pick = this._tab.list[this._tab.i];
-    if (!pick) return;
-    const suffix = this._tab.start === 0 && this.type === 'channel' && !frag.startsWith('#') ? ': ' : ' ';
-    ed.value = ed.value.slice(0, this._tab.start) + pick + suffix + ed.value.slice(pos);
-    const np = this._tab.start + pick.length + suffix.length; ed.setSelectionRange(np, np);
-    this._tab.frag = pick.toLowerCase() + suffix.trim().toLowerCase();
-    this._tab.frag = null; this._tab = { ...this._tab, frag: (pick + suffix).toLowerCase().trim() };
+      if (!pre && f.startsWith('#')) pool = S.chats.filter((c) => c.group).map((c) => chanOf(c.id, c.name));
+      const list = pool.filter((n) => n.toLowerCase().startsWith(f.replace(/^[.@]/, '')) || n.toLowerCase().startsWith(f)).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+      if (!list.length) return;
+      this._tab = { start: pos - m[1].length, list, i: 0, pre, first: pos - m[1].length === 0 };
+    }
+    const t = this._tab, pick = t.list[t.i];
+    const suffix = t.first && !t.pre && this.type === 'channel' && !pick.startsWith('#') ? ': ' : ' ';
+    const after = ed.value.slice(pos);
+    t.inserted = t.pre + pick + suffix;
+    ed.value = ed.value.slice(0, t.start) + t.inserted + after;
+    t.end = t.start + t.inserted.length; ed.setSelectionRange(t.end, t.end);
   }
   onTyping() {
     this._tab = null;
@@ -974,7 +979,7 @@ async function openChannel(jid, focus) {
         if (g.desc) w.add(T.topicIs(w.name, g.desc.replace(/\s+/g, ' ')));
         if (g.creation) w.add(T.topicBy((g.owner && w.nickOf(g.owner)?.nick) || (g.owner ? '+' + num(g.owner) : '?'), new Date(g.creation * 1000).toLocaleString('pt-BR')));
       }
-    } catch (e) { w.add(T.err('Não foi possível obter os participantes: ' + e.message)); }
+    } catch (e) { w.add(T.err(friendlyError(e, 'obter os participantes'))); }
     await loadHistory(w);
   }
   if (focus) activate(jid);
@@ -1057,6 +1062,42 @@ function setReaction(ln, who, emoji) {
   sp.textContent = ' ' + [...count].map(([e, n]) => e + (n > 1 ? n : '')).join(' ');
   sp.title = [...ln._reacts].map(([n, e]) => `${n}: ${e}`).join('\n');
 }
+// ---- mensagens de erro: traduz os códigos do WhatsApp para algo legível e guarda o original no log
+const ACTION_OF = { topic: 'mudar o tópico', t: 'mudar o tópico', assunto: 'renomear o grupo', subject: 'renomear o grupo', rename: 'renomear o grupo',
+  op: 'dar admin', deop: 'tirar admin', kick: 'remover alguém do grupo', k: 'remover alguém do grupo', invite: 'adicionar alguém ao grupo', add: 'adicionar alguém ao grupo',
+  convite: 'pegar o link de convite', link: 'pegar o link de convite', sairgrupo: 'sair do grupo', leave: 'sair do grupo', nick: 'mudar seu nome', recado: 'mudar seu recado', status: 'mudar seu recado',
+  msg: 'enviar a mensagem', m: 'enviar a mensagem', r: 'enviar a mensagem', whois: 'buscar as informações', w: 'buscar as informações', names: 'listar os participantes', enviar: 'enviar o arquivo', dcc: 'enviar o arquivo', send: 'enviar o arquivo', join: 'abrir o grupo', j: 'abrir o grupo', query: 'abrir o pvt', q: 'abrir o pvt' };
+function friendlyError(err, action) {
+  const raw = String(err?.message || err || '').replace(/^Error invoking remote method '[^']+': /, '').replace(/^(Error: )+/, '').trim();
+  const a = action ? ' ' + action : '';
+  const tests = [
+    [/upload/i, 'Não consegui enviar o arquivo. Tente de novo.'],
+    [/download|\b410\b|\bgone\b/i, 'Essa mídia não está mais disponível no WhatsApp.'],
+    [/outdated|client.?version/i, 'Esta versão do CyberWhats ficou desatualizada para o WhatsApp. Atualize o app.'],
+    [/logged.?out|unpaired|device.?removed/i, 'A sessão foi encerrada pelo celular. Use /server para conectar de novo.'],
+    [/\b40[13]\b|not-authorized|forbidden|not.?admin/i, action ? `Você não tem permissão para${a}: só os admins do grupo podem.` : 'Você não tem permissão para isso: só os admins do grupo podem.'],
+    [/\b404\b|item-not-found|not found/i, 'O WhatsApp não encontrou isso (o contato, grupo ou mensagem pode não existir mais).'],
+    [/\b409\b|conflict/i, 'Isso já está feito (por exemplo, a pessoa já está no grupo).'],
+    [/\b406\b|not-acceptable|bad-request|\b400\b/i, action ? `O WhatsApp recusou o pedido para${a}.` : 'O WhatsApp recusou o pedido.'],
+    [/\b429\b|rate-?overlimit|too many/i, 'Muitas tentativas seguidas. Espere um pouco e tente de novo.'],
+    [/\b5\d\d\b|internal-server-error|service-unavailable/i, 'O WhatsApp está com problema agora. Tente de novo em instantes.'],
+    [/no such host|dial tcp|network is unreachable|connection refused|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ENETUNREACH|i\/o timeout/i, 'Sem conexão com a internet (ou o WhatsApp está fora do ar). Confira sua rede.'],
+    [/timed? ?out|deadline exceeded|tempo esgotado|timeout/i, 'O WhatsApp demorou demais para responder. Tente de novo.'],
+    [/not connected|websocket|not logged in|disconnected|connection (closed|reset)/i, 'Você não está conectado. Use /server.'],
+    [/not on whatsapp/i, 'Esse número não está no WhatsApp.'],
+    [/ENOENT|no such file/i, 'Arquivo não encontrado.'],
+    [/EACCES|EPERM|permission denied/i, 'Sem permissão para acessar o arquivo.'],
+    [/ENOSPC/i, 'O disco está cheio.'],
+    [/EPIPE|exited|motor/i, 'O motor do WhatsApp parou. Tente reconectar com /server.']
+  ];
+  let msg = null;
+  for (const [re, txt] of tests) if (re.test(raw)) { msg = txt; break; }
+  // mensagens que já são nossas (em português) passam direto
+  if (!msg && raw && !/\b(the|failed|error|to|of|with|status|returned|connection|refused|unexpected|invalid|could|cannot|unable|while|got|expected|is|was)\b|[a-z]+-[a-z]+-?[a-z]*\b.*\d{3}/i.test(raw)) msg = raw;
+  if (!msg) msg = (action ? `Não foi possível${a}.` : 'Algo deu errado.') + ' Detalhes em /log.';
+  if (raw && msg !== raw) api('app:logError', `${action || '-'} :: ${raw}`).catch(() => {});
+  return msg;
+}
 // texto numa linha só, cortado no fim de uma palavra
 function shortText(t, max = 60, cutAlready = false) {
   t = strip(waToCodes(String(t || ''))).replace(/\s+/g, ' ').trim();
@@ -1079,6 +1120,8 @@ function renderMsg(w, m, hist = false) {
   let text = waToCodes(m.text || '');
   const hl = !m.fromMe && (m.mentions?.some((x) => x.me) || (S.me?.name && new RegExp(`\\b${S.me.name.split(' ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(m.text || '')));
   if (m.mentions) for (const mt of m.mentions) text = text.replace('@' + mt.num, `${B}@${cleanNick(mt.nick)}${B}`);
+  // menções que vieram só com o número: troca pelo nick de quem está no canal
+  if (w.type === 'channel') text = text.replace(/@(\d{8,})/g, (all, n) => { const x = w.nicks.find((y) => num(y.id) === n); return x ? `${B}@${x.nick}${B}` : all; });
   let html = '';
   if (m.kind === 'media') {
     const cap = m.caption ? ' ' + waToCodes(m.caption) : m.fileName ? ' ' + m.fileName : '';
@@ -1140,7 +1183,7 @@ function onWa(ev) {
       if (ev.state === 'offline' && prev !== 'offline') {
         fireScript('DISCONNECT', {});
         play('disconnect');
-        status.add(T.err(`Desconectado${ev.reason ? ' (' + ev.reason + ')' : ''}${ev.code ? ' [' + ev.code + ']' : ''}`));
+        status.add(T.err(`Desconectado${ev.reason ? ': ' + friendlyError(ev.reason) : ''}`));
         if (!S.me) status.add(T.info(`Detalhes técnicos em ${C}12/log${C}2 (arquivo conexao.log).`));
         status.setTitle('Status: (não conectado)');
         for (const w of S.wins.values()) if (w.type !== 'status') w.add(T.err('Desconectado'));
@@ -1165,9 +1208,12 @@ function onWa(ev) {
     case 'retry':
       status.add(T.info(`Tentando reconectar em ${ev.seconds}s... (/disconnect para cancelar)`));
       break;
-    case 'error':
-      status.add(T.err(ev.text));
+    case 'error': {
+      // "Falha ao conectar: <detalhe em inglês>" -> mantém o começo e traduz o detalhe
+      const mm = /^([^:]{3,60}): (.+)$/.exec(ev.text || '');
+      status.add(T.err(mm && /^[A-ZÀ-Ú][a-zà-ú]/.test(mm[1]) ? `${mm[1]}. ${friendlyError(mm[2])}` : friendlyError(ev.text)));
       break;
+    }
     case 'sync':
     case 'chats':
       if (ev.chats) { S.chats = ev.chats; for (const c of S.chats) if (!c.group) indexNick(c.name, c.id); }
@@ -1452,7 +1498,9 @@ async function run(line, w, opts = {}) {
         if (!ids.length) return;
         if (action === 'remove' && !confirm(`Remover ${rest.join(', ')} do grupo?`)) return;
         const r = await api('wa:groupAction', w.jid, action, ids);
-        for (const x of r || []) if (x.status && x.status !== '200') w.add(T.err(`Falhou para +${num(x.jid)} (código ${x.status})${x.status === '403' ? ' — talvez precise do link de convite' : ''}`));
+        const why = { 401: 'você não é admin do grupo', 403: 'a pessoa só entra por convite; mande o link com /convite', 404: 'o número não está no WhatsApp', 408: 'a pessoa saiu há pouco tempo e não pode ser adicionada agora', 409: action === 'add' ? 'já está no grupo' : 'já está assim', 500: 'o WhatsApp está com problema, tente de novo' };
+        const verbo = { add: 'adicionar', remove: 'remover', promote: 'dar admin para', demote: 'tirar admin de' }[action] || 'alterar';
+        for (const x of r || []) if (x.status && x.status !== '200') { w.add(T.err(`Não deu para ${verbo} +${num(x.jid)}: ${why[x.status] || 'o WhatsApp recusou'}.`)); if (!why[x.status]) api('app:logError', `groupAction ${action} ${x.jid} status ${x.status}`).catch(() => {}); }
         return;
       }
       case 'convite': case 'link': { if (w.type !== 'channel' || !needOnline()) return; const l = await api('wa:invite', w.jid); w.add(T.info(`Link de convite do ${w.name}: ${C}12${l}`)); navigator.clipboard.writeText(l); return; }
@@ -1510,7 +1558,7 @@ async function run(line, w, opts = {}) {
         return w.add(`${T.pre} ${C}12${U}Dica${U}:${C}2 ${t}`);
       }
       case 'atalhos': {
-        for (const [k, d] of [['Alt+1..9', 'vai para a janela N'], ['Ctrl+Tab', 'próxima janela'], ['Tab', 'completa nick'], ['↑ / ↓', 'histórico do que você digitou'], ['Duplo-clique no pvt', 'whois'], ['Botão direito na linha', 'responder (citar)'], ['Selecionar texto', 'copia automaticamente'], ['Esc', 'cancela resposta'], ['Ctrl+B / Ctrl+I', 'negrito / itálico'], ['Ctrl+L', 'limpar janela'], ['Ctrl+W', 'fechar janela'], ['PgUp / PgDn', 'rolar o texto']]) w.add(`${C}12${k.padEnd(22)}${C}1${d}`);
+        for (const [k, d] of [['Alt+1..9', 'vai para a janela N'], ['Ctrl+Tab', 'próxima janela'], ['Tab', 'completa nick (@ + começo do nick + Tab = menção)'], ['↑ / ↓', 'histórico do que você digitou'], ['Duplo-clique no pvt', 'whois'], ['Botão direito na linha', 'responder (citar)'], ['Selecionar texto', 'copia automaticamente'], ['Esc', 'cancela resposta'], ['Ctrl+B / Ctrl+I', 'negrito / itálico'], ['Ctrl+L', 'limpar janela'], ['Ctrl+W', 'fechar janela'], ['PgUp / PgDn', 'rolar o texto']]) w.add(`${C}12${k.padEnd(22)}${C}1${d}`);
         return;
       }
       case 'ajuda': case 'help': {
@@ -1566,7 +1614,7 @@ async function run(line, w, opts = {}) {
     }
   } catch (e) {
     play('error');
-    w.add(T.err(e.message));
+    w.add(T.err(friendlyError(e, ACTION_OF[cmd])));
   }
 }
 async function say(w, text, action = false) {
@@ -1574,19 +1622,26 @@ async function say(w, text, action = false) {
   if (!w.jid) return w.add(T.err('Não é possível enviar texto nesta janela. Use /msg, /query ou /join.'));
   if (S.conn !== 'online') return w.add(T.err('Você não está conectado. Use /server'));
   const q = w.quote; w.setQuote(null);
+  // @Nick de alguém do canal vira menção de verdade no WhatsApp (@número)
+  if (w.type === 'channel' && text.includes('@')) {
+    text = text.replace(/(^|\s)@([^\s@:,;!?]+)/g, (all, sp, nk) => {
+      const n = w.nicks.find((x) => x.nick.toLowerCase() === nk.toLowerCase());
+      return n && n.id ? `${sp}@${num(n.id)}` : all;
+    });
+  }
   try {
     const t0 = performance.now();
     const e = await api('wa:send', w.jid, codesToWa(text), q);
     S.lag = Math.round(performance.now() - t0);
     if (e && !w.buf.querySelector(`.ln[data-id="${CSS.escape(e.id)}"]`)) renderMsg(w, e);
     if (w._typingSent) { w._typingSent = 0; clearTimeout(w._typingStop); }
-  } catch (err) { play('error'); w.add(T.err('Falha ao enviar: ' + err.message)); }
+  } catch (err) { play('error'); w.add(T.err(friendlyError(err, 'enviar a mensagem'))); }
 }
 async function sendFile(w, path) {
   if (S.conn !== 'online') return w.add(T.err('Você não está conectado.'));
   w.add(T.info(`DCC Send: enviando ${C}12${path.split(/[\\/]/).pop()}${C}2...`));
   try { const r = await api('wa:sendFile', w.jid, path, ''); for (const e of r || []) if (e) renderMsg(w, e); }
-  catch (err) { w.add(T.err('Falha no envio: ' + err.message)); }
+  catch (err) { w.add(T.err(friendlyError(err, 'enviar o arquivo'))); }
 }
 // Janela de lista (estilo "Lista de Canais") com filtro
 function listWindow(id, title, cols, rows, filter, onOpen, menu, refresh) {
@@ -1661,7 +1716,7 @@ async function cmdRecent(n = 30, auto = false) {
 async function cmdUsers(filter) {
   if (S.conn !== 'online') return cur().add(T.err('Você não está conectado. Use /server'));
   let list = [];
-  try { list = await api('wa:contacts'); } catch (e) { return cur().add(T.err('Não consegui listar os contatos: ' + e.message)); }
+  try { list = await api('wa:contacts'); } catch (e) { return cur().add(T.err(friendlyError(e, 'listar os contatos'))); }
   for (const c of list) indexNick(c.nick, c.id);
   S.contacts = list;
   list.sort((a, b) => (b.my - a.my) || a.nick.localeCompare(b.nick, 'pt-BR', { sensitivity: 'base' }));
@@ -1789,7 +1844,7 @@ async function showLusers(w = st()) {
 }
 async function showMotd(w = st()) {
   let txt = '';
-  try { txt = await api('app:motd'); } catch (e) { return w.add(T.err('MOTD indisponível: ' + e.message)); }
+  try { txt = await api('app:motd'); } catch (e) { return w.add(T.err('MOTD indisponível. ' + friendlyError(e))); }
   const ver = await api('app:version').catch(() => '');
   const now = new Date();
   const top = S.chats.filter((c) => c.group).sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 5);
@@ -1847,7 +1902,7 @@ function iniParse(lines) {
   return out;
 }
 function dataKey(file) { const n = SC.normPath(file); return Object.keys(SC.data).find((k) => k === n) || Object.keys(SC.data).find((k) => k.split('/').pop() === n.split('/').pop()) || n; }
-function persistData(key) { api('scripts:writeData', key, (SC.data[key] || []).join('\r\n')).catch((e) => st().add(T.err('Script: ' + e.message))); }
+function persistData(key) { api('scripts:writeData', key, (SC.data[key] || []).join('\r\n')).catch((e) => st().add(T.err('Script: ' + friendlyError(e)))); }
 const SC = new CwScript({
   me: () => myNick(),
   active: () => cur()?.name || 'Status',
@@ -1914,7 +1969,7 @@ async function loadScripts(announce, w) {
     if (announce) w.add(T.info(`Scripts carregados: ${C}12${r.scripts.map((s) => s.name).join(', ') || 'nenhum'}${C}2 (${tot.al} aliases, ${tot.ev} eventos, ${tot.mn} menus)`));
     for (const e of errs) w.add(`${C}4* Script: ${e}`);
     return errs;
-  } catch (e) { w.add(T.err('Não consegui carregar os scripts: ' + e.message)); return [e.message]; }
+  } catch (e) { w.add(T.err('Não consegui carregar os scripts. ' + friendlyError(e))); return [e.message]; }
 }
 async function scriptMenu(type, w, extra) {
   try { return await SC.buildMenu(type, scriptCtx(w, extra)); } catch (e) { st().add(`${C}4* Script (menu): ${e.message}`); return []; }
