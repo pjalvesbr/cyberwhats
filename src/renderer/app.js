@@ -382,6 +382,9 @@ class Win {
     t.inserted = t.pre + pick + suffix;
     ed.value = ed.value.slice(0, t.start) + t.inserted + after;
     t.end = t.start + t.inserted.length; ed.setSelectionRange(t.end, t.end);
+    // nick completado com Tab vira menção no WhatsApp quando a mensagem for enviada
+    const who = this.type === 'channel' && this.nicks.find((n) => n.nick === pick);
+    if (who && who.id) (this._compl = this._compl || new Map()).set(pick, who.id);
   }
   onTyping() {
     this._tab = null;
@@ -1560,7 +1563,7 @@ async function run(line, w, opts = {}) {
         return w.add(`${T.pre} ${C}12${U}Dica${U}:${C}2 ${t}`);
       }
       case 'atalhos': {
-        for (const [k, d] of [['Alt+1..9', 'vai para a janela N'], ['Ctrl+Tab', 'próxima janela'], ['Tab', 'completa nick (@ + começo do nick + Tab = menção)'], ['↑ / ↓', 'histórico do que você digitou'], ['Duplo-clique no pvt', 'whois'], ['Botão direito na linha', 'responder (citar)'], ['Selecionar texto', 'copia automaticamente'], ['Esc', 'cancela resposta'], ['Ctrl+B / Ctrl+I', 'negrito / itálico'], ['Ctrl+L', 'limpar janela'], ['Ctrl+W', 'fechar janela'], ['PgUp / PgDn', 'rolar o texto']]) w.add(`${C}12${k.padEnd(22)}${C}1${d}`);
+        for (const [k, d] of [['Alt+1..9', 'vai para a janela N'], ['Ctrl+Tab', 'próxima janela'], ['Tab', 'completa o nick (Tab de novo alterna; vira menção no WhatsApp)'], ['↑ / ↓', 'histórico do que você digitou'], ['Duplo-clique no pvt', 'whois'], ['Botão direito na linha', 'responder (citar)'], ['Selecionar texto', 'copia automaticamente'], ['Esc', 'cancela resposta'], ['Ctrl+B / Ctrl+I', 'negrito / itálico'], ['Ctrl+L', 'limpar janela'], ['Ctrl+W', 'fechar janela'], ['PgUp / PgDn', 'rolar o texto']]) w.add(`${C}12${k.padEnd(22)}${C}1${d}`);
         return;
       }
       case 'ajuda': case 'help': {
@@ -1624,7 +1627,15 @@ async function say(w, text, action = false) {
   if (!w.jid) return w.add(T.err('Não é possível enviar texto nesta janela. Use /msg, /query ou /join.'));
   if (S.conn !== 'online') return w.add(T.err('Você não está conectado. Use /server'));
   const q = w.quote; w.setQuote(null);
-  // @Nick de alguém do canal vira menção de verdade no WhatsApp (@número)
+  // nicks completados com Tab viram menção de verdade no WhatsApp (@número), como chamar alguém no IRC
+  if (w.type === 'channel' && w._compl?.size) {
+    for (const [nk, id] of w._compl) {
+      const re = new RegExp(`(^|[\\s(])@?${nk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[\\s:,.!?)]|$)`);
+      text = text.replace(re, (all, sp) => `${sp}@${num(id)}`);
+    }
+    w._compl.clear();
+  }
+  // @Nick digitado à mão também vira menção
   if (w.type === 'channel' && text.includes('@')) {
     text = text.replace(/(^|\s)@([^\s@:,;!?]+)/g, (all, sp, nk) => {
       const n = w.nicks.find((x) => x.nick.toLowerCase() === nk.toLowerCase());
