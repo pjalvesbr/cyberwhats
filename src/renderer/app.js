@@ -16,33 +16,72 @@ const S = {
 };
 
 // ---------------- theme "Padrão" (sistema/tema.cst) ----------------
-const PRE = `${O}${U}${C}3>${O}${C}10>${C}1>${O}`;
+const PRE0 = `${O}${U}${C}3>${O}${C}10>${C}1>${O}`;
+let PRE = PRE0;
+// temas originais do CyberScript (assets/themes/themes.json, compilados dos .cst):
+// cada evento vira um modelo com marcadores \u0001x — n=nick h=canal t=texto a=endereço k=alvo m=modo c=cor do nick 1..4=cores base
+const TH = { list: [], t: null, colors: [], base: {}, cline: {} };
+const p2 = (n) => String(n).padStart(2, '0');
+function thx(ev, m, slot) {
+  const tpl = TH.t?.ev[ev];
+  if (!tpl) return null;
+  let out = tpl.replace(/\u0001(.)/g, (x, k) => (m[k] != null ? m[k] : TH.base[k] != null ? TH.base[k] : ''));
+  if (m.t && tpl.indexOf('\u0001t') < 0) out += ' ' + m.t; // o tema não mostra o texto? então vai no fim
+  const col = TH.colors[slot];
+  return (col != null && col !== '' && !/^[\d,]/.test(out) ? C + p2(col) : '') + out;
+}
+// $gncc: cor do nick na lista (vai com o próprio \x03 para não grudar em cores que o tema já abriu)
+const thClineOf = (adm) => { const v = (adm === 'superadmin' ? TH.cline.owner || TH.cline.op : adm === 'admin' ? TH.cline.op : TH.cline.regular) || ''; return v ? C + v : ''; };
 const T = {
-  pre: PRE,
-  info: (t) => `${PRE} ${C}2${t}`,
-  err: (t) => `${PRE} ${C}4${t}`,
-  joinSelf: (ch) => `${PRE} ${C}2Agora falando no${C}12 ${ch}`,
-  join: (n, a) => `${PRE} ${C}3Entrou: ${n} ${O}[${a}]`,
-  part: (n, a, why) => `${PRE} ${C}3Saiu: ${n} ${O}[${a}]${why ? ` (${why}${O})` : ''}`,
-  kick: (by, n) => `${PRE} ${C}3${by} kickou ${n} [${O}removido do grupo${O}]`,
-  mode: (by, m) => `${PRE} ${C}3${by} define modo: ${m}`,
-  topic: (by, t) => `${PRE} ${C}3${by} Mudou o topic para ${C}1"${t}${O}${C}1"`,
-  subject: (by, from, to) => `${PRE} ${C}3${by} renomeou o canal ${from} para ${C}12${to}`,
-  topicIs: (ch, t) => `${PRE} ${C}02Tópico do${C}12 ${ch} ${C}1"${t}${O}${C}1"`,
-  topicBy: (by, when) => `${PRE} ${C}02Tópico posto por:${C}12 ${by} ${C}2em${C}12 ${when}`,
-  notify: (n, a) => `${PRE} ${C}2Está no WhatsApp ${n} ${C}12${U}(${U}${C}02${a}${C}12${U})${U}`,
-  unotify: (n, a) => `${PRE} ${C}2Saiu do WhatsApp ${n} ${C}12${U}(${U}${C}02${a}${C}12${U})${U}`,
-  away: () => `${PRE} ${C}12${U}Away${U}:${C}02 você está marcado como away.`,
-  back: () => `${PRE} ${C}12${U}back${U}:${C}02 você acabou de retornar do away.`,
+  get pre() { return PRE; },
+  info: (t) => thx('ECHO', { t: `${C}${TH.t ? p2(TH.colors[4] ?? 2) : '2'}${t}` }, 4) ?? `${PRE} ${C}02${t}`,
+  err: (t) => thx('ERROR', { t: `${C}04${t}` }, 4) ?? `${PRE} ${C}04${t}`,
+  joinSelf: (ch) => thx('JOINSELF', { h: ch }, 7) ?? `${PRE} ${C}2Agora falando no${C}12 ${ch}`,
+  join: (n, a, ch) => thx('JOIN', { n, a, h: ch || '' }, 7) ?? `${PRE} ${C}3Entrou: ${n} ${O}[${a}]`,
+  part: (n, a, why, ch) => thx('PART', { n, a, h: ch || '', t: why || '' }, 16) ?? `${PRE} ${C}3Saiu: ${n} ${O}[${a}]${why ? ` (${why}${O})` : ''}`,
+  kick: (by, n, ch) => thx('KICK', { n: by, k: n, h: ch || '', t: 'removido do grupo' }, 8) ?? `${PRE} ${C}03${by} kickou ${n} [${O}removido do grupo${O}]`,
+  mode: (by, m, ch) => thx('MODE', { n: by, h: ch || '', t: m }, 9) ?? `${PRE} ${C}03${by} define modo: ${m}`,
+  topic: (by, t, ch) => thx('TOPIC', { n: by, h: ch || '', t }, 18) ?? `${PRE} ${C}03${by} Mudou o topic para ${C}1"${t}${O}${C}1"`,
+  subject: (by, from, to) => `${PRE} ${C}03${by} renomeou o canal ${from} para ${C}12${to}`,
+  topicIs: (ch, t) => thx('RAW.332', { h: ch, t }, 18) ?? `${PRE} ${C}02Tópico do${C}12 ${ch} ${C}1"${t}${O}${C}1"`,
+  topicBy: (by, when, ch) => thx('RAW.333', { h: ch || '', n: by, t: when }, 18) ?? `${PRE} ${C}02Tópico posto por:${C}12 ${by} ${C}2em${C}12 ${when}`,
+  notify: (n, a) => thx('NOTIFY', { n, a, t: '' }, 13) ?? `${PRE} ${C}2Está no WhatsApp ${n} ${C}12${U}(${U}${C}02${a}${C}12${U})${U}`,
+  unotify: (n, a) => thx('UNOTIFY', { n, a }, 13) ?? `${PRE} ${C}2Saiu do WhatsApp ${n} ${C}12${U}(${U}${C}02${a}${C}12${U})${U}`,
+  away: () => thx('RAW.306', {}, 4) ?? `${PRE} ${C}12${U}Away${U}:${C}02 você está marcado como away.`,
+  back: () => thx('RAW.305', {}, 4) ?? `${PRE} ${C}12${U}back${U}:${C}02 você acabou de retornar do away.`,
   wrow: (k, v) => `${C}12${U}(${O}${C}2 ${k} ${C}12${U}):${O}${C}2 ${v}`,
   nickCol: (adm) => (adm === 'superadmin' ? '10' : adm === 'admin' ? '12' : '1'),
   nickMode: (adm) => (adm === 'superadmin' ? `${C}10.` : adm === 'admin' ? `${C}12@` : ''),
-  textChan: (nick, adm, text, hl) => `${C}1<${C}${T.nickCol(adm)}${T.nickMode(adm)}${nick}${C}1>${O}${hl ? C + '5' : ''} ${text}`,
-  textChanSelf: (nick, adm, text) => `${C}12<${C}02${T.nickMode(adm)}${C}02${nick}${C}12>${C}1 ${text}`,
-  textQuery: (nick, text) => `${C}12<${C}1${nick}${C}12>${O} ${text}`,
-  textQuerySelf: (nick, text) => `${C}12<${C}02${nick}${C}12>${C}1 ${text}`,
-  action: (nick, text) => `${C}6* ${nick} ${text}`
+  modeChar: (adm) => (adm === 'superadmin' ? '.' : adm === 'admin' ? '@' : ''),
+  hlText: (text, hl) => (hl ? C + (TH.t ? p2(TH.colors[3] ?? 5) : '5') : '') + text,
+  textChan: (nick, adm, text, hl, ch) => thx('TEXTCHAN', { n: nick, h: ch || '', t: T.hlText(text, hl), m: T.modeChar(adm), c: thClineOf(adm) }, hl ? 3 : 11) ?? `${C}1<${C}${T.nickCol(adm)}${T.nickMode(adm)}${nick}${C}1>${O}${hl ? C + '5' : ''} ${text}`,
+  textChanSelf: (nick, adm, text, ch) => thx('TEXTCHANSELF', { n: nick, h: ch || '', t: text, m: T.modeChar(adm), c: TH.cline.me ? C + TH.cline.me : '' }, 15) ?? `${C}12<${C}02${T.nickMode(adm)}${C}02${nick}${C}12>${C}1 ${text}`,
+  textQuery: (nick, text) => thx('TEXTQUERY', { n: nick, t: text }, 11) ?? `${C}12<${C}01${nick}${C}12>${O} ${text}`,
+  textQuerySelf: (nick, text) => thx('TEXTQUERYSELF', { n: nick, t: text }, 15) ?? `${C}12<${C}02${nick}${C}12>${C}1 ${text}`,
+  action: (nick, text) => thx('ACTIONCHAN', { n: nick, t: text, m: '' }, 1) ?? `${C}6* ${nick} ${text}`
 };
+// timestamp no formato do tema (HH:nn:ss etc.)
+function stamp(d) {
+  const f = TH.t?.ev.TIMESTAMPFORMAT;
+  if (!f || !/[Hh]/.test(f)) return `[${hms(d)}] `;
+  const H = d.getHours(), h12 = H % 12 || 12;
+  return f.replace(/HH|hh|nn|ss|tt|H|h/g, (k) => ({ HH: pad(H), hh: pad(h12), H: String(H), h: String(h12), nn: pad(d.getMinutes()), ss: pad(d.getSeconds()), tt: H < 12 ? 'am' : 'pm' })[k]) + O + ' ';
+}
+async function loadThemes() {
+  try { TH.list = await (await fetch('assets/themes/themes.json')).json(); } catch { TH.list = []; }
+}
+const rgbHex = (s) => '#' + s.split(',').map((n) => p2(Math.max(0, Math.min(255, Number(n) || 0)).toString(16))).join('');
+function themeById(id) { return TH.list.find((t) => t.id === id) || null; }
+// junta o tema com o scheme (sub-tema) escolhido
+function themeMerged(id, scheme) {
+  const t = themeById(id); if (!t) return null;
+  const sc = scheme ? t.schemes.find((s) => s.name === scheme) : null;
+  const o = { ...t };
+  if (sc) for (const [k, v] of Object.entries(sc)) if (k !== 'name' && k !== 'preview' && k !== 'prefix') o[k] = v;
+  // scheme com prefixo próprio: troca o prefixo em todos os formatos
+  if (sc?.prefix && t.ev.PREFIX) o.ev = Object.fromEntries(Object.entries(t.ev).map(([k, v]) => [k, v.split(t.ev.PREFIX).join(sc.prefix)]));
+  return o;
+}
 
 // ---------------- sons (SOUNDS/ do CyberScript) ----------------
 const SND = { pvt: 'pvt.wav', join: 'join.wav', notice: 'notice.wav', connect: 'conectar.wav', disconnect: 'desconectar.wav', online: 'online.wav', kick: 'kick.wav', op: 'ops.wav', error: 'erro.wav', start: 'start.mp3', msg: 'newmsg.wav' };
@@ -183,6 +222,8 @@ class Win {
       e.preventDefault();
       const ln = e.target.closest('.ln');
       const extra = ln?.dataset.id && this.jid ? [['Responder esta mensagem (citar)', () => this.quoteLine(ln)], ['Copiar linha', () => copyText(ln.textContent)], '-'] : [];
+      const stk = ln?.querySelector('.inmedia.sticker');
+      if (stk) extra.unshift(['Guardar figurinha em "Minhas"', () => api('st:addMine', { kind: 'recv', chat: stk.dataset.chat, id: stk.dataset.id }).then(() => this.add(T.info('Figurinha guardada em Minhas (botão de figurinhas ao lado da caixa de texto).'))).catch((er) => this.add(T.err(friendlyError(er, 'guardar a figurinha')))) ], '-');
       const type = this.type === 'channel' ? 'channel' : this.type === 'query' ? 'query' : 'status';
       const selNick = this.nl?.querySelector('.nk.sel')?.dataset.nick || '';
       const sm = await scriptMenu(type, this, this.type === 'query' ? { args: [this.name] } : this.type === 'channel' ? { askArgs: 'Para quem? (nick)', askDefault: selNick } : {});
@@ -208,7 +249,22 @@ class Win {
     this.edit = h('input', { class: 'edit', type: 'text', spellcheck: 'false' });
     this.edit.addEventListener('keydown', (e) => this.onKey(e));
     this.edit.addEventListener('input', () => this.onTyping());
-    this.body.appendChild(this.edit);
+    this.edit.addEventListener('paste', (e) => pasteFiles(this, e));
+    if (this.jid) {
+      // caixa de texto + botão de gravar mensagem de voz
+      const row = h('div', { class: 'editrow' });
+      this.mic = h('button', { class: 'micbtn', title: 'Gravar mensagem de voz (clique de novo para enviar, Esc cancela)' }, MIC_SVG);
+      this.mic.addEventListener('mousedown', (e) => e.preventDefault());
+      this.mic.addEventListener('click', () => (this.rec ? this.rec.finish(true) : recordVoice(this)));
+      this.emo = h('button', { class: 'micbtn emobtn', title: 'Emojis (Ctrl+Espaço)' }, '<span>😊</span>');
+      this.emo.addEventListener('mousedown', (e) => e.preventDefault());
+      this.emo.addEventListener('click', () => window.EmojiPicker.open(this.edit, this.emo));
+      this.stk = h('button', { class: 'micbtn stkbtn', title: 'Figurinhas (Ctrl+Shift+Espaço)' }, STK_SVG);
+      this.stk.addEventListener('mousedown', (e) => e.preventDefault());
+      this.stk.addEventListener('click', () => openStickers(this, this.stk));
+      row.append(this.mic, this.emo, this.stk, this.edit);
+      this.body.appendChild(row);
+    } else this.body.appendChild(this.edit);
     this.body.addEventListener('dragover', (e) => e.preventDefault());
     this.body.addEventListener('drop', (e) => {
       e.preventDefault();
@@ -245,12 +301,12 @@ class Win {
       const day = d.toDateString();
       if (this._lastDay !== day) { this._lastDay = day; this.addDay(d, opts.before); }
     }
-    const ts = S.cfg.timestamp !== false && !opts.nots && !opts.cont && line !== '' ? `[${hms(d)}] ` : '';
+    const ts = S.cfg.timestamp !== false && !opts.nots && !opts.cont && line !== '' ? stamp(d) : '';
     const ln = h('div', { class: 'ln' + (opts.hist ? ' hist' : '') + (opts.cls ? ' ' + opts.cls : '') + (opts.cont ? ' cont' : '') });
     // recuo: linhas que quebram (e as continuações) alinham com o começo do texto, depois do <nick>
     if (opts.indent != null) {
-      const n = opts.indent + (opts.cont ? 0 : ts.length);
-      const pre = opts.cont ? opts.indent + (S.cfg.timestamp !== false ? 11 : 0) : n;
+      const n = opts.indent + (opts.cont ? 0 : strip(ts).length);
+      const pre = opts.cont ? opts.indent + (S.cfg.timestamp !== false ? strip(stamp(d)).length : 0) : n;
       ln.style.paddingLeft = pre + 'ch';
       if (!opts.cont) ln.style.textIndent = -pre + 'ch';
     }
@@ -274,14 +330,17 @@ class Win {
   clear() { if (this.buf) { this.buf.innerHTML = ''; this.lines = 0; } }
   minimize() { this.el.classList.add('min'); const next = S.order.filter((i) => i !== this.id && !S.wins.get(i).el.classList.contains('min')).pop(); if (next) activate(next); else { S.active = null; this.el.classList.remove('active'); this.sw.classList.remove('active'); updateAppTitle(); } }
   close() {
-    if (this.type === 'status') { if (!confirm('Fechar o CyberWhats?')) return; api('win:close'); return; }
+    if (this.type === 'status') { if (!confirm('Fechar o CyberWhats?')) return; api('app:quit'); return; }
     this.el.remove(); this.sw.remove();
+    if (this.unread) { this.unread = 0; updateUnread(); }
     S.wins.delete(this.id); S.order = S.order.filter((i) => i !== this.id);
     if (S.active === this.id) { S.active = null; const n = S.wins.has(S.prevActive) ? S.prevActive : S.order[S.order.length - 1]; if (n) activate(n); }
     updateAppTitle();
   }
   bufClick(e) {
     if (e.target.closest('video, audio')) return;
+    const po = e.target.closest('.poll .popt'); if (po) { pollClick(po); return; }
+    const lp = e.target.closest('.lprev[data-url]'); if (lp && lp.dataset.url && !lp.classList.contains('pending')) { api('app:openUrl', lp.dataset.url); return; }
     // áudio ainda não carregado: clique carrega e toca
     const au = e.target.closest('.inmedia.audio');
     if (au && !au.querySelector('audio')) {
@@ -351,8 +410,10 @@ class Win {
       e.preventDefault();
     } else if (e.key === 'Tab') {
       e.preventDefault(); this.complete();
+    } else if (e.ctrlKey && (e.key === ' ' || e.code === 'Space')) {
+      e.preventDefault(); if (e.shiftKey) { if (this.jid) openStickers(this, this.stk || this.edit); } else window.EmojiPicker.open(this.edit, this.emo || this.edit);
     } else if (e.key === 'Escape') {
-      this.setQuote(null);
+      if (this.rec) this.rec.finish(false); else this.setQuote(null);
     } else if (e.key === 'PageUp' || e.key === 'PageDown') {
       this.buf.scrollTop += (e.key === 'PageUp' ? -1 : 1) * (this.buf.clientHeight - 32); e.preventDefault();
     } else if (e.ctrlKey && !e.altKey && ['b', 'k', 'u', 'i', 'o', 'r'].includes(e.key.toLowerCase())) {
@@ -577,6 +638,29 @@ function makeWin(id, type, name, opts) {
   if (id === 'recent' && S.order[0] === 'status') S.order.splice(1, 0, id); else S.order.push(id);
   return w;
 }
+// ---------------- não lidas: bandeja e barra de tarefas ----------------
+let unreadTimer = null, unreadLast = -1;
+function updateUnread() {
+  clearTimeout(unreadTimer);
+  unreadTimer = setTimeout(() => {
+    const n = [...S.wins.values()].reduce((a, w) => a + (w.unread || 0), 0);
+    if (n === unreadLast) return; unreadLast = n;
+    const badge = (size, withIcon) => {
+      const cv = document.createElement('canvas'); cv.width = cv.height = size; const g = cv.getContext('2d');
+      if (withIcon && appImg.complete) g.drawImage(appImg, 0, 0, size, size);
+      const r = withIcon ? size * 0.36 : size / 2, cx = size - r, cy = withIcon ? size - r : r;
+      g.fillStyle = '#e00000'; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#fff'; g.lineWidth = Math.max(1, size / 16); g.stroke();
+      const t = n > 99 ? '99+' : String(n);
+      g.fillStyle = '#fff'; g.font = `bold ${Math.round(r * (t.length > 2 ? 0.9 : t.length > 1 ? 1.15 : 1.4))}px Tahoma, Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(t, cx, cy + r * 0.08);
+      return cv.toDataURL('image/png');
+    };
+    api('app:unread', n, n ? badge(32, true) : null, n ? badge(32, false) : null).catch(() => {});
+  }, 150);
+}
+const appImg = new Image(); appImg.src = 'assets/app.png';
+function clearUnread(w) { if (w && w.unread && document.hasFocus()) { w.unread = 0; updateUnread(); } }
 function activate(id, noFocus = false) {
   const w = S.wins.get(id); if (!w) return;
   if (S.active && S.active !== id) {
@@ -585,6 +669,7 @@ function activate(id, noFocus = false) {
     if (o?.jid) { setSeen(o.jid); if (o._newMark) { o._newMark.remove(); o._newMark = null; o.lines--; } }
   }
   S.active = id;
+  clearUnread(w);
   w.el.classList.remove('min'); w.el.classList.add('active'); w.sw.classList.add('active');
   w.el.style.zIndex = ++S.zTop;
   w.activity = null; w.sw.classList.remove('act-msg', 'act-event', 'act-hl');
@@ -714,7 +799,7 @@ const MENUS = {
     ['Abrir pasta de recebidos', () => api('app:openDownloads'), false, { icon: 'recebidos' }],
     '-',
     ['Encerrar sessão (deslogar aparelho)', () => run('/logout', st())],
-    ['Sair', () => api('win:close'), false, { key: 'Alt+F4' }]
+    ['Sair', () => api('app:quit'), false, { key: 'Alt+F4' }]
   ],
   Exibir: () => [
     ['Toolbar', () => toggleBar('toolbar'), false, { checked: !$('#toolbar').classList.contains('hidden') }],
@@ -723,7 +808,10 @@ const MENUS = {
     '-',
     ['Status', () => activate('status')],
     ['@Away', () => activate(awayWin().id)],
-    ['Limpar janela', () => cur().clear(), false, { key: 'Ctrl+L' }]
+    ['Limpar janela', () => cur().clear(), false, { key: 'Ctrl+L' }],
+    '-',
+    ['Localizar na janela...', () => findBar(cur()), !cur()?.buf, { key: 'Ctrl+F' }],
+    ['Buscar em todas as conversas...', () => askRun('Buscar', 'Procurar em todas as conversas (histórico e logs):', '', (v) => run('/buscar ' + v, cur()))]
   ],
   Favoritos: () => [
     ['Pasta de Canais...', dlgFavorites, false, { icon: '20' }],
@@ -751,6 +839,7 @@ const MENUS = {
     ['Join (abrir grupo)...', () => askRun('Join', 'Nome do grupo:', '#', (v) => run('/join ' + v, cur()))],
     ['Whois...', () => askRun('Whois', 'Nick ou número:', '', (v) => run('/whois ' + v, cur()))],
     ['Enviar arquivo...', () => run('/enviar', cur()), !cur()?.jid, { icon: '16' }],
+    ['Gravar mensagem de voz', () => run('/gravar', cur()), !cur()?.jid],
     ...(await (async () => { const sm = await scriptMenu('menubar', cur()); return sm.length ? ['-', ...sm] : []; })())
   ],
   Janela: () => [
@@ -766,6 +855,7 @@ const MENUS = {
     ['Linguagem dos scripts', () => run('/ajuda scripts', cur()), false],
     ['Dicas', () => run('/dicas', cur()), false, { icon: 'dicas' }],
     '-',
+    ['Procurar versão nova...', () => cmdUpdate(cur()), false],
     ['Sobre o CyberWhats...', dlgAbout, false, { icon: 'about' }]
   ]
 };
@@ -832,6 +922,7 @@ const st = () => S.wins.get('status');
 // ======================================================================
 //  Diálogos estilo Win9x
 // ======================================================================
+const KEEP = Symbol('keep'); // botão que não fecha o diálogo
 function dialog({ title, body, buttons = [['OK', true]], width = 360, onOpen }) {
   return new Promise((resolve) => {
     const layer = $('#modal-layer');
@@ -844,7 +935,7 @@ function dialog({ title, body, buttons = [['OK', true]], width = 360, onOpen }) 
     const b = h('div', { class: 'dbody' }); if (typeof body === 'string') b.innerHTML = body; else b.appendChild(body);
     const bb = h('div', { class: 'dbtns' });
     const done = (v) => { d.remove(); if (!layer.children.length) layer.classList.remove('on'); resolve(v); };
-    for (const [label, val] of buttons) { const x = h('button', { class: 'btn' }, esc(label)); x.onclick = () => done(typeof val === 'function' ? val(d) : val); bb.appendChild(x); }
+    for (const [label, val] of buttons) { const x = h('button', { class: 'btn' }, esc(label)); x.onclick = () => { const r = typeof val === 'function' ? val(d) : val; if (r !== KEEP) done(r); }; bb.appendChild(x); }
     cb.onclick = () => done(null);
     d.append(t, b, bb);
     layer.appendChild(d);
@@ -865,7 +956,49 @@ async function ask(title, label, def = '') {
   return dialog({ title, body: `<div>${esc(label)}</div><div class="drow"><input type="text" style="flex:1" value="${esc(def)}"></div>`, buttons: [['OK', (d) => $('input', d).value], ['Cancelar', null]] });
 }
 async function askRun(title, label, def, fn) { const v = await ask(title, label, def); if (v != null && v.trim()) fn(v.trim()); }
-async function setCfg(patch) { S.cfg = await api('cfg:set', patch); applyTheme(); }
+async function setCfg(patch) {
+  const before = fmtSig();
+  // quem estava no fim da conversa continua no fim (trocar tema/fonte muda a altura das linhas)
+  const atEnd = [...S.wins.values()].filter((w) => w.buf && (S.maxed && S.active !== w.id ? w.atBottom !== false : w.buf.scrollTop + w.buf.clientHeight >= w.buf.scrollHeight - 20));
+  S.cfg = await api('cfg:set', patch); applyTheme();
+  if (before !== fmtSig()) await rerenderWins(); // scheme que só troca cores não precisa redesenhar
+  for (const w of atEnd) pinBottom(w);
+}
+// segura a rolagem no fim por um instante, enquanto imagens e prévias terminam de carregar
+function pinBottom(w, ms = 2500) {
+  if (!w.buf) return;
+  clearInterval(w._pin);
+  const stop = () => { clearInterval(w._pin); w._pin = null; w.buf.removeEventListener('wheel', stop); w.buf.removeEventListener('mousedown', stop); };
+  w.buf.addEventListener('wheel', stop, { once: true }); w.buf.addEventListener('mousedown', stop, { once: true });
+  const t0 = Date.now();
+  w.buf.scrollTop = w.buf.scrollHeight; w.atBottom = true;
+  w._pin = setInterval(() => { if (Date.now() - t0 > ms) return stop(); w.buf.scrollTop = w.buf.scrollHeight; }, 50);
+}
+// assinatura do formato das mensagens (tema + prefixo do scheme)
+function fmtSig() { const t = themeKey(); const th = /^cs:/.test(t) ? themeById(t.slice(3)) : null; const sc = th?.schemes.find((x) => x.name === S.cfg.themeScheme); return t + '|' + (sc?.prefix || ''); }
+// troca de tema: redesenha as conversas abertas no formato novo
+async function rerenderWins() {
+  for (const w of [...S.wins.values()]) {
+    if (!w.jid || w._ready) continue;
+    const b = w.buf, wasBottom = w.atBottom !== false && b.scrollTop + b.clientHeight >= b.scrollHeight - 40, top = b.scrollTop;
+    w.clear(); w._lastDay = null;
+    if (w.type === 'channel') { w.add(T.joinSelf(w.name)); const g = S.groups.get(w.jid); if (g?.desc) w.add(T.topicIs(w.name, g.desc.replace(/\s+/g, ' '))); }
+    await loadHistory(w);
+    // mantém a rolagem onde estava; se estava no fim, continua no fim mesmo com fotos/prévias carregando depois
+    if (wasBottom) {
+      const stick = () => { b.scrollTop = b.scrollHeight; };
+      stick(); w.atBottom = true;
+      const until = Date.now() + 4000;
+      const onLoad = (e) => { if (Date.now() < until && /IMG|VIDEO/.test(e.target.tagName)) stick(); };
+      b.addEventListener('load', onLoad, true);
+      const mo = new MutationObserver(() => { if (Date.now() < until) stick(); });
+      mo.observe(b, { childList: true, subtree: true });
+      const stop = () => { b.removeEventListener('load', onLoad, true); mo.disconnect(); };
+      b.addEventListener('wheel', stop, { once: true }); b.addEventListener('mousedown', stop, { once: true });
+      setTimeout(stop, 4000);
+    } else b.scrollTop = top;
+  }
+}
 
 function dlgOptions() {
   const c = S.cfg;
@@ -873,9 +1006,10 @@ function dlgOptions() {
   dialog({
     title: 'Opções do CyberWhats - /opcoes', width: 420,
     body: `<fieldset><legend>Geral</legend>${chk('timestamp', 'Mostrar timestamp [HH:nn:ss]')}${chk('sounds', 'Sons do CyberScript (pvt, join, conectar...)')}${chk('notifyPopups', 'Balões de aviso do Windows')}${chk('autojoinAll', 'Auto-join: entrar em todos os meus grupos ao conectar')}${chk('showMotd', 'Mostrar LUSERS e MOTD ao conectar (/motd editar para personalizar)')}${chk('showRecent', 'Mostrar os contatos recentes ao conectar (/recentes)')}</fieldset>
-      <fieldset><legend>Mídia</legend>${chk('inlineMedia', 'Mostrar fotos, figurinhas e vídeos no chat')}${chk('autoDownload', 'Baixar automaticamente fotos, figurinhas, áudios e vídeos')}<div class="drow">Vídeos até <input type="text" data-k="videoMaxMB" style="width:40px" value="${esc(String(c.videoMaxMB || 25))}"> MB (maiores: clique para abrir)</div></fieldset>
+      <fieldset><legend>Mídia</legend>${chk('inlineMedia', 'Mostrar fotos, figurinhas e vídeos no chat')}${chk('linkPreviews', 'Prévia de links (título do YouTube, Instagram...)')}${chk('autoDownload', 'Baixar automaticamente fotos, figurinhas, áudios e vídeos')}<div class="drow">Vídeos até <input type="text" data-k="videoMaxMB" style="width:40px" value="${esc(String(c.videoMaxMB || 25))}"> MB (maiores: clique para abrir)</div></fieldset>
       <fieldset><legend>Privacidade</legend>${chk('readReceipts', 'Enviar confirmação de leitura (tique azul)')}${chk('typing', 'Mostrar "digitando..." para os outros')}</fieldset>
       <fieldset><legend>Motor de conexão (precisa reiniciar)</legend><label><input type="radio" name="eng" value="go" ${c.engine !== 'web' ? 'checked' : ''}> whatsmeow — conexão direta (recomendado)</label><label><input type="radio" name="eng" value="web" ${c.engine === 'web' ? 'checked' : ''}> WhatsApp Web escondido (modo antigo)</label></fieldset>
+      <fieldset><legend>Windows</legend>${chk('trayMinimize', 'Minimizar para a bandeja (perto do relógio)')}${chk('trayClose', 'Fechar (X) deixa o CyberWhats rodando na bandeja')}${chk('startWithWindows', 'Iniciar junto com o Windows (abre na bandeja)')}${chk('checkUpdates', 'Avisar quando sair uma versão nova')}</fieldset>
       <fieldset><legend>Away</legend>${chk('awayAutoReply', 'Responder pvts automaticamente quando away')}<div class="drow">Msg: <input type="text" data-k="awayMessage" style="flex:1" value="${esc(c.awayMessage || '')}"></div></fieldset>`,
     buttons: [['OK', (d) => {
       const p = {}; d.querySelectorAll('[data-k]').forEach((i) => (p[i.dataset.k] = i.type === 'checkbox' ? i.checked : i.value));
@@ -921,34 +1055,129 @@ const dlgAutojoin = () => groupPicker('Auto-Join', 'Grupos abertos automaticamen
   (ids, d) => { const all = $('#aj-all', d).checked; setCfg({ autojoin: ids, autojoinAll: all }); if ($('#aj-now', d).checked && S.conn === 'online') autoJoin(all ? true : undefined); },
   `<label><input type="checkbox" id="aj-all" ${S.cfg.autojoinAll ? 'checked' : ''}> Entrar automaticamente em <b>TODOS</b> os meus grupos ao conectar</label><label><input type="checkbox" id="aj-now"> Entrar agora</label>`);
 function dlgTheme() {
+  const BUILTIN = [['classico', 'Clássico (branco)', 'Fundo branco também na lista de nicks.'], ['dark', 'Dark', 'Fundo preto, cores claras.']];
+  const cur0 = themeKey();
+  // o Padrão (do xBinho) fica no topo, junto dos temas da casa
+  const opts = `<option value="cs:padrao">Padrão</option>` + BUILTIN.map(([v, n]) => `<option value="${v}">${esc(n)}</option>`).join('') + '<option disabled>──────────</option>' +
+    TH.list.filter((t) => t.id !== 'padrao').map((t) => `<option value="cs:${esc(t.id)}">${esc(t.name || t.id)}</option>`).join('');
   dialog({
-    title: 'Theme Manager', width: 340,
-    body: `<fieldset><legend>Tema</legend><label><input type="radio" name="t" value="padrao" ${S.cfg.theme !== 'dark' && S.cfg.theme !== 'classico' ? 'checked' : ''}> Padrão (CyberScript)</label><label><input type="radio" name="t" value="classico" ${S.cfg.theme === 'classico' ? 'checked' : ''}> Clássico (branco)</label><label><input type="radio" name="t" value="dark" ${S.cfg.theme === 'dark' ? 'checked' : ''}> Dark</label></fieldset>
+    title: 'Theme Manager', width: 560,
+    body: `<div class="tm"><div class="tm-l"><select size="14" class="tm-list">${opts}</select></div>
+    <div class="tm-r"><div class="tm-prev"><img class="tm-img" alt=""><div class="tm-noimg">Sem prévia</div></div>
+    <div class="tm-info"><b class="tm-name"></b> <span class="tm-author"></span><div class="tm-desc"></div></div>
+    <label class="tm-sch">Scheme: <select class="tm-scheme"></select></label></div></div>
     <fieldset><legend>Ícones</legend><label><input type="radio" name="ic" value="modern" ${S.cfg.iconSet !== 'classic' ? 'checked' : ''}> Modernos</label><label><input type="radio" name="ic" value="classic" ${S.cfg.iconSet === 'classic' ? 'checked' : ''}> Clássicos (CyberScript)</label></fieldset>
     <fieldset><legend>Tamanho</legend><label>Fonte do bate-papo: <select data-k="fontSize"><option>12</option><option>14</option><option>16</option><option>18</option><option>20</option><option>24</option></select></label>
+    <label><input type="checkbox" data-k="crispFont" ${S.cfg.crispFont !== false ? 'checked' : ''}> Fonte sempre nítida (ajusta o tamanho à escala do Windows${window.devicePixelRatio !== 1 ? `, hoje ${Math.round(window.devicePixelRatio * 100)}%` : ''})</label>
     <label>Interface (menus, barras, listas): <select data-k="uiSize"><option value="11">Pequena (clássica)</option><option value="13">Normal</option><option value="15">Grande</option><option value="17">Muito grande</option><option value="20">Enorme</option></select></label></fieldset>`,
-    onOpen: (d) => { $('[data-k=fontSize]', d).value = String(S.cfg.fontSize || 16); $('[data-k=uiSize]', d).value = String(S.cfg.uiSize || 13); },
-    buttons: [['OK', (d) => setCfg({ theme: $('input[name=t]:checked', d).value, iconSet: $('input[name=ic]:checked', d).value, fontSize: +$('[data-k=fontSize]', d).value, uiSize: +$('[data-k=uiSize]', d).value })], ['Cancelar', null]]
+    onOpen: (d) => {
+      $('[data-k=fontSize]', d).value = String(S.cfg.fontSize || 16); $('[data-k=uiSize]', d).value = String(S.cfg.uiSize || 13);
+      const list = $('.tm-list', d), sch = $('.tm-scheme', d), img = $('.tm-img', d);
+      const show = () => {
+        const v = list.value; const t = /^cs:/.test(v) ? themeById(v.slice(3)) : null;
+        const b = BUILTIN.find((x) => x[0] === v);
+        $('.tm-name', d).textContent = t ? (t.id === 'padrao' ? 'Padrão' : t.name) : b ? b[1] : '';
+        $('.tm-author', d).textContent = t?.author && !/^\?+$/.test(t.author) ? `por ${t.author}` : '';
+        $('.tm-desc', d).textContent = t ? t.description || '' : b ? b[2] : '';
+        sch.innerHTML = '<option value="">(padrão)</option>' + (t?.schemes || []).map((s) => `<option>${esc(s.name)}</option>`).join('');
+        sch.disabled = !t?.schemes?.length;
+        if (t && v === cur0) sch.value = S.cfg.themeScheme || '';
+        showImg();
+      };
+      const showImg = () => {
+        const v = list.value; const t = /^cs:/.test(v) ? themeById(v.slice(3)) : null;
+        const sc = t?.schemes.find((s) => s.name === sch.value);
+        const f = sc?.preview || t?.preview;
+        img.style.display = f ? '' : 'none'; $('.tm-noimg', d).style.display = f ? 'none' : '';
+        if (f) img.src = `assets/themes/${t.id}/${f}`;
+      };
+      list.value = cur0; if (list.selectedIndex < 0) list.value = 'cs:padrao';
+      list.addEventListener('change', show); sch.addEventListener('change', showImg);
+      list.addEventListener('dblclick', () => d.querySelector('.btn').click());
+      show();
+    },
+    buttons: [['OK', (d) => { saveTheme(d); }], ['Aplicar', (d) => { saveTheme(d); return KEEP; }], ['Cancelar', null]]
   });
 }
+function saveTheme(d) {
+  const v = $('.tm-list', d).value || 'cs:padrao';
+  setCfg({ theme: v, themeScheme: /^cs:/.test(v) ? $('.tm-scheme', d).value : '', iconSet: $('input[name=ic]:checked', d).value, crispFont: $('[data-k=crispFont]', d).checked, fontSize: +$('[data-k=fontSize]', d).value, uiSize: +$('[data-k=uiSize]', d).value });
+}
+// "padrao" antigo = o Padrão do CyberScript (xBinho)
+function themeKey() { const t = S.cfg.theme || 'cs:padrao'; return t === 'padrao' ? 'cs:padrao' : t; }
+// mudou a escala do Windows (ou o app foi para outro monitor): recalcula o tamanho da fonte
+(function watchDpr() { try { matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener('change', () => { if (S.cfg) applyTheme(); watchDpr(); }, { once: true }); } catch {} })();
 function applyTheme() {
   const r = document.documentElement.style;
-  const t = S.cfg.theme;
+  const t = themeKey();
+  const cs = /^cs:/.test(t) ? themeMerged(t.slice(3), S.cfg.themeScheme) : null;
   const dark = t === 'dark';
-  r.setProperty('--buf-bg', dark ? '#000000' : '#ffffff');
-  r.setProperty('--buf-fg', dark ? '#d0d0d0' : '#000000');
-  r.setProperty('--nick-bg', dark ? '#000000' : t === 'classico' ? '#ffffff' : '#d0d0d0');
-  r.setProperty('--nick-fg', dark ? '#d0d0d0' : '#000000');
-  r.setProperty('--edit-bg', dark ? '#000000' : '#ffffff');
-  r.setProperty('--edit-fg', dark ? '#ffffff' : t === 'classico' ? '#000000' : '#000080');
-  r.setProperty('--mono-size', (S.cfg.fontSize || 16) + 'px');
+  // a Fixedsys é uma fonte de pixels: só fica reta em múltiplos de 16 pixels *reais* da tela.
+  // Com escala do Windows (125%, 150%...) ajusta o tamanho para cair num múltiplo exato.
+  const dpr = window.devicePixelRatio || 1, want = S.cfg.fontSize || 16;
+  const mono = S.cfg.crispFont === false ? want : (16 * Math.max(1, Math.round((want * dpr) / 16))) / dpr;
+  r.setProperty('--mono-size', mono + 'px');
   const ui = S.cfg.uiSize || 13;
   r.setProperty('--ui-size', ui + 'px');
   r.setProperty('--z', (ui / 11).toFixed(3));
-  // paleta do chat em variáveis CSS: trocar o tema recolore também as linhas já escritas
-  const DARK = ['#000000', '#d0d0d0', '#7f9cff', '#3cc83c', '#ff5050', '#e07050', '#e070e0', '#ff9c30', '#ffff40', '#60ff60', '#30c8c8', '#60ffff', '#58a8ff', '#ff60ff', '#a8a8a8', '#606060'];
-  window.F.PALETTE.forEach((c, i) => r.setProperty('--c' + i, dark ? DARK[i] : c));
+  TH.t = cs;
+  if (cs) {
+    // tema original do CyberScript: paleta RGB, slots de cor (fundo, texto, editbox, lista de nicks) e cores dos nicks
+    const pal = (cs.rgbcolors || '').trim().split(/\s+/).filter(Boolean).map(rgbHex);
+    window.F.PALETTE.forEach((c, i) => r.setProperty('--c' + i, pal[i] || c));
+    TH.colors = (cs.colors || '').split(',').map((x) => x.trim()).map((x) => (x === '' ? null : Number(x) % 16));
+    const col = (slot, def) => { const i = TH.colors[slot]; return i != null && !Number.isNaN(i) ? `var(--c${i})` : def; };
+    r.setProperty('--buf-bg', col(0, '#ffffff'));
+    r.setProperty('--buf-fg', col(11, '#000000'));
+    r.setProperty('--edit-bg', col(21, col(0, '#ffffff')));
+    r.setProperty('--edit-fg', col(22, col(11, '#000000')));
+    r.setProperty('--nick-bg', col(23, col(0, '#ffffff')));
+    r.setProperty('--nick-fg', col(24, col(11, '#000000')));
+    const bc = (cs.basecolors || '').split(',').map((x) => x.trim());
+    TH.base = { 1: bc[0] || '', 2: bc[1] || '', 3: bc[2] || '', 4: bc[3] || '' };
+    const cl = (k) => { const v = (cs['cline' + k] || '').trim(); return /^\d+$/.test(v) ? p2(Number(v) % 16) : ''; };
+    TH.cline = { owner: cl('owner'), op: cl('op'), regular: cl('regular'), me: cl('me') };
+    for (const [k, v] of Object.entries({ op: TH.cline.op, owner: TH.cline.owner || TH.cline.op, reg: TH.cline.regular, me: TH.cline.me })) {
+      if (v) r.setProperty('--nk-' + k, `var(--c${Number(v)})`); else r.removeProperty('--nk-' + k);
+    }
+    PRE = cs.ev.PREFIX ? cs.ev.PREFIX + O : PRE0;
+  } else {
+    r.setProperty('--buf-bg', dark ? '#000000' : '#ffffff');
+    r.setProperty('--buf-fg', dark ? '#d0d0d0' : '#000000');
+    r.setProperty('--nick-bg', dark ? '#000000' : t === 'classico' ? '#ffffff' : '#d0d0d0');
+    r.setProperty('--nick-fg', dark ? '#d0d0d0' : '#000000');
+    r.setProperty('--edit-bg', dark ? '#000000' : '#ffffff');
+    r.setProperty('--edit-fg', dark ? '#ffffff' : t === 'classico' ? '#000000' : '#000080');
+    ['op', 'owner', 'reg', 'me'].forEach((k) => r.removeProperty('--nk-' + k));
+    // paleta do chat em variáveis CSS: trocar o tema recolore também as linhas já escritas
+    const DARK = ['#000000', '#d0d0d0', '#7f9cff', '#3cc83c', '#ff5050', '#e07050', '#e070e0', '#ff9c30', '#ffff40', '#60ff60', '#30c8c8', '#60ffff', '#58a8ff', '#ff60ff', '#a8a8a8', '#606060'];
+    window.F.PALETTE.forEach((c, i) => r.setProperty('--c' + i, dark ? DARK[i] : c));
+    TH.colors = []; TH.base = {}; TH.cline = {};
+    PRE = PRE0;
+  }
   refreshIcons();
+}
+// ---------------- versão nova ----------------
+function showUpdate(i) {
+  st().add(`${PRE} ${C}04${B}Versão nova do CyberWhats:${B}${C}12 ${i.latest}${C}02 (você está na ${i.current}) — ${C}12/atualizar${C}02 para baixar.`, { activity: 'hl' });
+  play('notice');
+  const notes = (i.notes || '').replace(/\r/g, '').split('\n').map((l) => l.replace(/^#+\s*/, '').replace(/\*\*/g, '')).filter((l) => l.trim()).slice(0, 14).join('\n');
+  dialog({
+    title: 'CyberWhats - Versão nova', width: 440,
+    body: `<div style="line-height:1.6">Saiu a versão <b>${esc(i.latest)}</b> do CyberWhats! Você está usando a <b>${esc(i.current)}</b>.</div>${notes ? `<pre class="upd-notes">${esc(notes)}</pre>` : ''}<label><input type="checkbox" class="upd-skip"> Não avisar mais desta versão</label>`,
+    buttons: [
+      ['Baixar agora', (d) => { api('app:openUrl', i.download || i.url); if ($('.upd-skip', d).checked) setCfg({ skipVersion: i.latest }); }],
+      ['Ver novidades', (d) => { api('app:openUrl', i.url); return KEEP; }],
+      ['Depois', (d) => { if ($('.upd-skip', d).checked) setCfg({ skipVersion: i.latest }); }]
+    ]
+  });
+}
+async function cmdUpdate(w) {
+  w.add(T.info('Procurando versão nova...'));
+  try {
+    const i = await api('app:checkUpdate');
+    if (i.newer) showUpdate(i); else w.add(T.info(`Você já está na versão mais nova (${C}12${i.current}${C}02).`));
+  } catch (e) { w.add(T.err(friendlyError(e, 'procurar versão nova'))); }
 }
 function dlgAbout() {
   api('app:version').then((v) => dialog({
@@ -983,7 +1212,7 @@ async function openChannel(jid, focus) {
         const adm = g.participants.filter((p) => p.admin).length;
         w.add(`${PRE} Status [${U}Admins(${adm})${U} ${U}Normais(${g.participants.length - adm})${U} ${U}Total(${g.participants.length})${U}]`, { nots: true });
         if (g.desc) w.add(T.topicIs(w.name, g.desc.replace(/\s+/g, ' ')));
-        if (g.creation) w.add(T.topicBy((g.owner && w.nickOf(g.owner)?.nick) || (g.owner ? '+' + num(g.owner) : '?'), new Date(g.creation * 1000).toLocaleString('pt-BR')));
+        if (g.creation) w.add(T.topicBy((g.owner && w.nickOf(g.owner)?.nick) || (g.owner ? '+' + num(g.owner) : '?'), new Date(g.creation * 1000).toLocaleString('pt-BR'), w.name));
       }
     } catch (e) { w.add(T.err(friendlyError(e, 'obter os participantes'))); }
     await loadHistory(w);
@@ -1105,7 +1334,9 @@ function friendlyError(err, action) {
     [/EPIPE|exited|motor/i, 'O motor do WhatsApp parou. Tente reconectar com /server.']
   ];
   let msg = null;
-  for (const [re, txt] of tests) if (re.test(raw)) { msg = txt; break; }
+  // erros que o próprio CyberWhats já escreve em português (figurinhas, enquetes, voz) passam direto
+  if (/figurinha|enquete|grava[çc][ãa]o/i.test(raw) && !/\b(the|failed|error)\b/i.test(raw)) msg = raw.charAt(0).toUpperCase() + raw.slice(1) + (/[.!?]$/.test(raw) ? '' : '.');
+  if (!msg) for (const [re, txt] of tests) if (re.test(raw)) { msg = txt; break; }
   // mensagens que já são nossas (em português) passam direto
   if (!msg && raw && !/\b(the|failed|error|to|of|with|status|returned|connection|refused|unexpected|invalid|could|cannot|unable|while|got|expected|is|was)\b|[a-z]+-[a-z]+-?[a-z]*\b.*\d{3}/i.test(raw)) msg = raw;
   if (!msg) msg = (action ? `Não foi possível${a}.` : 'Algo deu errado.') + ' Detalhes em /log.';
@@ -1144,22 +1375,28 @@ function renderMsg(w, m, hist = false) {
     if (m.hasMedia) html = ` <a class="media" data-chat="${esc(m.chat)}" data-id="${esc(m.id)}">(abrir)</a>`;
     if (S.cfg.inlineMedia !== false && m.hasMedia) html += inlineMediaHtml(m);
   }
+  if (m.kind === 'poll' && m.poll) { text = `${C}10[Enquete]${O} ${B}${waToCodes(m.poll.name || m.text || '')}${B}`; html += pollHtml(m); }
   if (m.edited) html += ' <span style="color:#808080">(editada)</span>';
+  if ((m.kind === 'text' || m.kind === 'action') && S.cfg.linkPreviews !== false) {
+    if (m.link?.title) html += linkPrevHtml(m.link);
+    else { const u = (/https?:\/\/[^\s<>"]+/i.exec(m.text || '') || [])[0]; if (u) html += `<div class="lprev pending" data-url="${esc(u.replace(/[).,;!?]+$/, ''))}"></div>`; }
+  }
   const lines = text.split('\n');
   // tamanho visível do "<nick> " para alinhar as linhas seguintes com o começo do texto
-  const prefix = m.kind === 'action' ? T.action(nick, '') : w.type === 'channel' ? (m.fromMe ? T.textChanSelf(nick, adm, '') : T.textChan(nick, adm, '', hl)) : (m.fromMe ? T.textQuerySelf(nick, '') : T.textQuery(nick, ''));
+  const prefix = m.kind === 'action' ? T.action(nick, '') : w.type === 'channel' ? (m.fromMe ? T.textChanSelf(nick, adm, '', w.name) : T.textChan(nick, adm, '', hl, w.name)) : (m.fromMe ? T.textQuerySelf(nick, '') : T.textQuery(nick, ''));
   const indent = Math.min(strip(prefix).length, 30);
   let first;
   lines.forEach((t, i) => {
     let s;
-    if (i > 0) s = `${hl ? C + '5' : m.kind === 'action' ? C + '6' : ''}${t}`;
+    if (i > 0) s = `${hl ? T.hlText('', true) : m.kind === 'action' ? C + (TH.t ? p2(TH.colors[1] ?? 6) : '6') : ''}${t}`;
     else if (m.kind === 'action') s = T.action(nick, actionBody(m, nick, t));
-    else if (w.type === 'channel') s = m.fromMe ? T.textChanSelf(nick, adm, t) : T.textChan(nick, adm, t, hl);
+    else if (w.type === 'channel') s = m.fromMe ? T.textChanSelf(nick, adm, t, w.name) : T.textChan(nick, adm, t, hl, w.name);
     else s = m.fromMe ? T.textQuerySelf(nick, t) : T.textQuery(nick, t);
     const ln = w.add(s, { date, hist, id: m.id, nick, jid: m.fromMe ? null : m.sender, html: i === lines.length - 1 ? html : '', activity: hist ? null : hl ? 'hl' : 'msg', forceScroll: m.fromMe && !hist, indent, cont: i > 0 });
     // resposta (citação): linha cinza logo abaixo da mensagem, dizendo a quem respondeu
     if (i === lines.length - 1 && ln && m.quote) w.add(`${C}14└ respondendo ${cleanNick(m.quote.nick)}: ${shortText(m.quote.text, 80, Array.from(m.quote.text || '').length === 60)}`, { date, hist, indent, cont: true, cls: 'quote' });
     if (ln && i === lines.length - 1 && ln.querySelector('.inmedia')) queueMedia(w, m, ln, hist);
+    if (ln && i === lines.length - 1) { const lp = ln.querySelector('.lprev.pending'); if (lp) queueLinkPrev(lp); }
     if (i === 0 && ln && !m.fromMe) markNick(ln, nick);
     if (i === 0 && ln) markNew(w, m, ln, hist);
     // reações guardadas (chegaram antes da janela abrir, ou em outra sessão)
@@ -1211,7 +1448,7 @@ function onWa(ev) {
       showQr(ev.dataUrl);
       break;
     case 'pairing':
-      status.add(T.info(`Código de pareamento: ${C}4${B}${ev.code}`));
+      status.add(T.info(`Código de pareamento: ${C}04${B}${ev.code}`));
       status.add(T.info('No celular: WhatsApp > Dispositivos conectados > Conectar dispositivo > Conectar com número de telefone.'));
       activate('status');
       break;
@@ -1262,6 +1499,14 @@ function onWa(ev) {
       w.add(T.action(who, `reagiu com ${ev.emoji}${ev.target ? ` a "${shortText(ev.target, 50, ev.target.length === 40)}"` : ''}`), { activity: 'event' });
       break;
     }
+    case 'poll': {
+      const w = getWin(ev.chat); if (!w || !w.buf) break;
+      if (w._ready) { w._ready.then(() => onWa(ev)); break; }
+      const box = w.buf.querySelector(`.ln[data-id="${CSS.escape(ev.id)}"] .poll`);
+      if (box) box.outerHTML = pollHtml({ chat: ev.chat, id: ev.id, poll: ev.poll });
+      if (!ev.fromMe) w.add(T.action(cleanNick(ev.nick), ev.voted.length ? `votou na enquete: ${ev.voted.join(', ')}` : 'retirou o voto da enquete'), { activity: 'event' });
+      break;
+    }
     case 'presence': {
       const w = getWin(ev.chat);
       const nick = w?.type === 'channel' ? w.nickOf(ev.who)?.nick || cleanNick(ev.nick) : w?.name || cleanNick(ev.nick);
@@ -1309,6 +1554,7 @@ async function onMessage(m) {
 }
 function afterMsg(w, m, isNew) {
   if (m.fromMe) return;
+  if ((S.active !== w.id || !document.hasFocus()) && Date.now() / 1000 - (m.ts || 0) < 600) { w.unread = (w.unread || 0) + 1; updateUnread(); }
   if ((m.kind === 'text' || m.kind === 'action') && m.text && Date.now() / 1000 - m.ts < 120 && SC.events.length) {
     let text = F.strip(waToCodes(m.text)).replace(/\s*\n\s*/g, ' ');
     if (m.kind === 'action') text = actionBody(m, senderNick(w, m), text);
@@ -1343,17 +1589,17 @@ function onGroupEvent(ev) {
   for (const t of ev.targets || []) {
     const addr = num(t.id) + '@s.whatsapp.net';
     const self = S.me && t.id === S.me.id;
-    if (ev.kind === 'add') { w.add(T.join(tn(t), addr), { activity: 'event' }); play('join'); fireScript('JOIN', { nick: tn(t), chan: w.name, target: w.name, win: w.id }); }
+    if (ev.kind === 'add') { w.add(T.join(tn(t), addr, w.name), { activity: 'event' }); play('join'); fireScript('JOIN', { nick: tn(t), chan: w.name, target: w.name, win: w.id }); }
     if (ev.kind === 'remove') fireScript(by && by !== cleanNick(t.nick) && ev.authorId !== t.id ? 'KICK' : 'PART', { nick: cleanNick(t.nick), chan: w.name, target: w.name, win: w.id, knick: by });
     else if (ev.kind === 'remove') {
-      if (by && by !== cleanNick(t.nick) && ev.authorId !== t.id) { w.add(T.kick(by, cleanNick(t.nick)), { activity: 'event' }); if (self) play('kick'); }
-      else w.add(T.part(cleanNick(t.nick), addr, 'saiu do grupo'), { activity: 'event' });
+      if (by && by !== cleanNick(t.nick) && ev.authorId !== t.id) { w.add(T.kick(by, cleanNick(t.nick), w.name), { activity: 'event' }); if (self) play('kick'); }
+      else w.add(T.part(cleanNick(t.nick), addr, 'saiu do grupo', w.name), { activity: 'event' });
     }
-    else if (ev.kind === 'promote') { w.add(T.mode(by || 'Servidor', `+o ${tn(t)}`), { activity: 'event' }); if (self) play('op'); }
-    else if (ev.kind === 'demote') w.add(T.mode(by || 'Servidor', `-o ${tn(t)}`), { activity: 'event' });
+    else if (ev.kind === 'promote') { w.add(T.mode(by || 'Servidor', `+o ${tn(t)}`, w.name), { activity: 'event' }); if (self) play('op'); }
+    else if (ev.kind === 'demote') w.add(T.mode(by || 'Servidor', `-o ${tn(t)}`, w.name), { activity: 'event' });
   }
   if (ev.kind === 'subject') w.add(T.subject(by || '?', chanName(ev.from), chanName(ev.text)), { activity: 'event' });
-  if (ev.kind === 'topic') w.add(T.topic(by || '?', ev.text.replace(/\s+/g, ' ')), { activity: 'event' });
+  if (ev.kind === 'topic') w.add(T.topic(by || '?', ev.text.replace(/\s+/g, ' '), w.name), { activity: 'event' });
 }
 
 // ---------------- QR code ----------------
@@ -1406,9 +1652,9 @@ const HELP = [
   ['/topic [texto]', 'mostra ou muda a descrição do grupo'], ['/assunto <nome>', 'renomeia o grupo'], ['/op /deop <nick>', 'promove/rebaixa admin'],
   ['/kick <nick>', 'remove do grupo'], ['/invite <número>', 'adiciona ao grupo atual'], ['/convite', 'mostra o link de convite do grupo'],
   ['/nick <novo>', 'muda seu nome no WhatsApp'], ['/apelido <alvo> <apelido>', 'apelido local p/ contato, #canal ou "eu" (só no CyberWhats)'], ['/meunick <apelido>', 'seu apelido local'], ['/recado <texto>', 'muda seu recado (status)'], ['/away [msg] /back', 'marca/desmarca away'],
-  ['/notify <nick>', 'avisa quando o contato ficar online (/unnotify desfaz)'], ['/ignore <nick>', 'ignora mensagens (/unignore desfaz)'], ['/enviar', 'envia arquivo (DCC Send) — ou arraste para a janela'],
+  ['/notify <nick>', 'avisa quando o contato ficar online (/unnotify desfaz)'], ['/ignore <nick>', 'ignora mensagens (/unignore desfaz)'], ['/enviar', 'envia arquivo (DCC Send) — ou arraste para a janela, ou cole uma imagem com Ctrl+V'], ['/gravar', 'grava uma mensagem de voz (de novo: envia; Esc cancela) — ou o botão do microfone'],
   ['/r <texto>', 'responde ao último pvt'], ['/server [número]', 'conecta (QR ou código)'], ['/disconnect /logout', 'desconecta / encerra a sessão'],
-  ['/web', 'mostra o WhatsApp Web original (só no motor antigo)'], ['/interface <px> /fonte <px>', 'tamanho da interface / do bate-papo'], ['/icones [moderno|classico]', 'alterna entre ícones modernos e clássicos'], ['/clear', 'limpa a janela'], ['/log /recebidos', 'abre pastas'], ['/tile /cascade', 'organiza as janelas'], ['/dicas', 'dica do CyberScript'],
+  ['/web', 'mostra o WhatsApp Web original (só no motor antigo)'], ['/interface <px> /fonte <px>', 'tamanho da interface / do bate-papo'], ['/icones [moderno|classico]', 'alterna entre ícones modernos e clássicos'], ['/atualizar', 'procura uma versão nova do CyberWhats'], ['/figurinhas', 'abre suas figurinhas (favoritas do WhatsApp, recebidas e as suas) — Ctrl+Shift+Espaço'], ['/enquete Pergunta? | op1 | op2', 'cria uma enquete (-m: várias respostas); clique nas opções para votar'], ['/buscar <texto>', 'procura em todas as conversas (histórico e logs); Ctrl+F procura na janela'], ['/tema [nome] [scheme]', 'troca o tema (sem nome: lista os 22 temas do CyberScript)'], ['/clear', 'limpa a janela'], ['/log /recebidos', 'abre pastas'], ['/tile /cascade', 'organiza as janelas'], ['/dicas', 'dica do CyberScript'],
   ['/motd', 'mostra a mensagem do dia (MOTD)'], ['/lusers', 'estatísticas: canais, contatos, usuários'], ['/echo <texto>', 'escreve só na sua tela'], ['/say <texto>', 'envia texto (mesmo começando com /)'],
   ['/opcoes', 'abre as opções (Alt+O)'], ['/about', 'sobre o CyberWhats'], ['/atalhos', 'lista os atalhos de teclado'], ['/ajuda scripts', 'referência da linguagem CyberWhats Script'],
   ['/scripts [nome]', 'abre o editor de scripts (Alt+R)'], ['/recarregar', 'recarrega todos os scripts (.cws)'], ['//comando', 'executa avaliando $identificadores e %variáveis'],
@@ -1466,7 +1712,7 @@ async function run(line, w, opts = {}) {
       case 'sairgrupo': case 'leave': {
         if (w.type !== 'channel' || !needOnline()) return w.add(T.err('Use dentro de um canal'));
         if (!confirm(`Sair DE VERDADE do grupo ${w.name}?`)) return;
-        await api('wa:leave', w.jid); w.add(T.part(cleanNick(S.me.name), num(S.me.id) + '@s.whatsapp.net', 'saiu do grupo')); return;
+        await api('wa:leave', w.jid); w.add(T.part(cleanNick(S.me.name), num(S.me.id) + '@s.whatsapp.net', 'saiu do grupo', w.name)); return;
       }
       case 'clear': case 'cls': case 'limpar': return w.clear();
       case 'list': case 'canais': return cmdList(args);
@@ -1576,18 +1822,18 @@ async function run(line, w, opts = {}) {
         return w.add(`${T.pre} ${C}12${U}Dica${U}:${C}2 ${t}`);
       }
       case 'atalhos': {
-        for (const [k, d] of [['Alt+1..9', 'vai para a janela N'], ['Ctrl+Tab', 'próxima janela'], ['Tab', 'completa o nick (Tab de novo alterna; vira menção no WhatsApp)'], ['↑ / ↓', 'histórico do que você digitou'], ['Duplo-clique no pvt', 'whois'], ['Botão direito na linha', 'responder (citar)'], ['Selecionar texto', 'copia automaticamente'], ['Esc', 'cancela resposta'], ['Ctrl+B / Ctrl+I', 'negrito / itálico'], ['Ctrl+L', 'limpar janela'], ['Ctrl+W', 'fechar janela'], ['PgUp / PgDn', 'rolar o texto']]) w.add(`${C}12${k.padEnd(22)}${C}1${d}`);
+        for (const [k, d] of [['Alt+1..9', 'vai para a janela N'], ['Ctrl+Tab', 'próxima janela'], ['Ctrl+F', 'localizar na janela (Enter = anterior, Shift+Enter = próxima)'], ['Ctrl+V', 'com imagem copiada: envia a imagem (com legenda)'], ['Ctrl+Espaço', 'abre a lista de emojis'], ['Ctrl+Shift+Espaço', 'abre as figurinhas'], ['Tab', 'completa o nick (Tab de novo alterna; vira menção no WhatsApp)'], ['↑ / ↓', 'histórico do que você digitou'], ['Duplo-clique no pvt', 'whois'], ['Botão direito na linha', 'responder (citar)'], ['Selecionar texto', 'copia automaticamente'], ['Esc', 'cancela resposta'], ['Ctrl+B / Ctrl+I', 'negrito / itálico'], ['Ctrl+L', 'limpar janela'], ['Ctrl+W', 'fechar janela'], ['PgUp / PgDn', 'rolar o texto']]) w.add(`${C}12${k.padEnd(22)}${C}01${d}`);
         return;
       }
       case 'ajuda': case 'help': {
         if (lcs(a1) === 'scripts' || lcs(a1) === 'script') {
           w.add(`${T.pre} ${C}2CyberWhats Script (${C}12.cws${C}2) — referência rápida:`);
-          for (const l of SCRIPT_HELP) w.add(`  ${C}1${l}`);
+          for (const l of SCRIPT_HELP) w.add(`  ${C}01${l}`);
           return;
         }
         w.add(`${T.pre} ${C}2Comandos do ${C}12CyberWhats${C}2 (em ordem alfabética):`);
         const key = (c) => c.replace(/^\//, '').toLowerCase();
-        for (const [c, d] of [...HELP].sort((x, y) => key(x[0]).localeCompare(key(y[0]), 'pt-BR'))) w.add(`  ${C}12${c.padEnd(30)}${C}1${d}`);
+        for (const [c, d] of [...HELP].sort((x, y) => key(x[0]).localeCompare(key(y[0]), 'pt-BR'))) w.add(`  ${C}12${c.padEnd(30)}${C}01${d}`);
         const known = new Set(HELP.flatMap(([c]) => c.match(/\/[a-z0-9.]+/gi) || []).map((x) => x.slice(1).toLowerCase()));
         const extra = Object.keys(SC.aliases).filter((a) => !known.has(a) && !a.includes('.') && !SC.aliases[a].local).sort();
         if (extra.length) w.add(`  ${C}14Comandos dos scripts: ${extra.map((a) => '/' + a).join(' ')}`);
@@ -1618,6 +1864,37 @@ async function run(line, w, opts = {}) {
         const v = /^cl/i.test(a1) ? 'classic' : /^mo/i.test(a1) ? 'modern' : (S.cfg.iconSet === 'classic' ? 'modern' : 'classic');
         await setCfg({ iconSet: v });
         return w.add(T.info(`Ícones: ${C}12${v === 'classic' ? 'clássicos (CyberScript)' : 'modernos'}`));
+      }
+      case 'atualizar': case 'update': case 'versao': return cmdUpdate(w);
+      case 'figurinhas': case 'figurinha': case 'stickers': if (!w.jid) return w.add(T.err('Abra uma conversa para mandar figurinhas.')); return openStickers(w, w.stk);
+      case 'enquete': case 'poll': {
+        if (!w.jid) return w.add(T.err('Abra uma conversa para criar a enquete.'));
+        let a = args.trim(); const multi = /^-m\s/.test(a); if (multi) a = a.slice(3);
+        const parts = a.split('|').map((x) => x.trim()).filter(Boolean);
+        if (parts.length < 3) return w.add(T.info(`Uso: ${C}12/enquete Pergunta? | opção 1 | opção 2 [| ...]${C}02 — com ${C}12-m${C}02 no começo deixa marcar várias.`));
+        if (!needOnline()) return;
+        try { const e = await api('wa:sendPoll', w.jid, parts[0], parts.slice(1, 13), multi); if (e) renderMsg(w, e); }
+        catch (e) { w.add(T.err(friendlyError(e, 'criar a enquete'))); }
+        return;
+      }
+      case 'gravar': case 'voz': case 'audio': if (!w.jid) return w.add(T.err('Abra uma conversa (canal ou pvt) para gravar.')); return w.rec ? w.rec.finish(!/^(cancel|cancelar|off)$/i.test(a1)) : recordVoice(w);
+      case 'buscar': case 'busca': case 'procurar': case 'search': return cmdSearch(args, w);
+      case 'localizar': case 'find': return findBar(w, args || null);
+      case 'tema': case 'theme': case 'temas': {
+        if (!args) {
+          w.add(T.info(`Temas: ${C}12classico${C}02, ${C}12escuro${C}02 e os originais do CyberScript (${C}12padrao${C}02 é o padrão):`));
+          for (const t of TH.list) w.add(`${PRE} ${C}12${t.id}${O} ${C}14${t.description || ''}${t.schemes.length ? ` ${C}2[schemes: ${t.schemes.map((x) => x.name).join(', ')}]` : ''}`);
+          return w.add(T.info('Use /tema <nome> [scheme] — ou o Theme Manager (Ferramentas > Temas / Cores).'));
+        }
+        const want = a1.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        const BI = { cyberwhats: 'cs:padrao', classico: 'classico', escuro: 'dark' };
+        if (BI[want]) { await setCfg({ theme: BI[want], themeScheme: '' }); return w.add(T.info(`Tema: ${C}12${want}`)); }
+        const t = TH.list.find((x) => x.id === want) || TH.list.find((x) => x.id.startsWith(want) || (x.name || '').toLowerCase().startsWith(want));
+        if (!t) return w.add(T.err(`Tema não encontrado: ${a1}`));
+        const rest = args.slice(a1.length).trim().toLowerCase();
+        const sc = rest ? t.schemes.find((x) => x.name.toLowerCase() === rest) || t.schemes.find((x) => x.name.toLowerCase().startsWith(rest)) : null;
+        await setCfg({ theme: 'cs:' + t.id, themeScheme: sc ? sc.name : '' });
+        return w.add(T.info(`Tema: ${C}12${t.name}${sc ? ` ${C}2(scheme ${C}12${sc.name}${C}2)` : ''}`));
       }
       case 'recentes': case 'recent': case 'recents': {
         if (/^(on|off)$/i.test(a1)) { await setCfg({ showRecent: /on/i.test(a1) }); return w.add(T.info(`Contatos recentes ao conectar: ${C}12${S.cfg.showRecent !== false ? 'LIGADO' : 'desligado'}`)); }
@@ -1663,13 +1940,332 @@ async function say(w, text, action = false) {
     if (w._typingSent) { w._typingSent = 0; clearTimeout(w._typingStop); }
   } catch (err) { play('error'); w.add(T.err(friendlyError(err, 'enviar a mensagem'))); }
 }
-async function sendFile(w, path) {
+async function sendFile(w, path, caption = '', opts) {
   if (S.conn !== 'online') return w.add(T.err('Você não está conectado.'));
-  w.add(T.info(`DCC Send: enviando ${C}12${path.split(/[\\/]/).pop()}${C}2...`));
-  try { const r = await api('wa:sendFile', w.jid, path, ''); for (const e of r || []) if (e) renderMsg(w, e); }
+  w.add(T.info(opts?.ptt ? `Enviando mensagem de voz${C}12 (${Math.round(opts.seconds || 0)}s)${C}02...` : `DCC Send: enviando ${C}12${opts?.label || path.split(/[\\/]/).pop()}${C}02...`));
+  try { const r = await api('wa:sendFile', w.jid, path, caption || '', opts); for (const e of r || []) if (e) renderMsg(w, e); }
   catch (err) { w.add(T.err(friendlyError(err, 'enviar o arquivo'))); }
 }
+// ---------------- prévia de links ----------------
+function linkPrevHtml(l) {
+  let host = ''; try { host = new URL(l.url).hostname.replace(/^www\./, ''); } catch {}
+  const th = l.thumb ? `<img class="lpthumb" src="${l.thumb.startsWith('data:') ? l.thumb : 'data:image/jpeg;base64,' + l.thumb}">` : '';
+  return `<div class="lprev" data-url="${esc(l.url || '')}">${th}<div class="lptext"><b>${esc(l.title || '')}</b>${l.desc ? `<span class="lpdesc">${esc(l.desc)}</span>` : ''}<span class="lpsite">${esc(l.site || host)}</span></div></div>`;
+}
+const lpQueue = []; let lpRunning = 0;
+function queueLinkPrev(el) { lpQueue.push(el); pumpLinkPrev(); }
+function pumpLinkPrev() {
+  while (lpRunning < 2 && lpQueue.length) {
+    const el = lpQueue.pop(); // mais novas primeiro
+    if (!el.isConnected) continue;
+    lpRunning++;
+    api('app:linkPreview', el.dataset.url).then((v) => {
+      if (!el.isConnected) return;
+      const buf = el.closest('.buffer'); const stick = buf && buf.scrollTop + buf.clientHeight >= buf.scrollHeight - 20;
+      if (v?.title) { el.outerHTML = linkPrevHtml(v); if (stick) buf.scrollTop = buf.scrollHeight; } else el.remove();
+    }).catch(() => el.remove()).finally(() => { lpRunning--; pumpLinkPrev(); });
+  }
+}
+
+// ---------------- enquetes ----------------
+function pollHtml(m) {
+  const p = m.poll, votes = Object.values(p.votes || {});
+  const total = votes.length;
+  const multi = p.max !== 1;
+  const rows = (p.options || []).map((o, i) => {
+    const who = votes.filter((v) => v.options.includes(o));
+    const mine = who.some((v) => v.fromMe);
+    const pct = total ? Math.round((who.length / total) * 100) : 0;
+    const names = who.map((v) => (v.fromMe ? myNick() : cleanNick(v.nick || '?'))).join(', ');
+    return `<div class="popt${mine ? ' mine' : ''}" data-i="${i}" title="${esc(names ? 'Votos: ' + names : 'Clique para votar')}"><span class="pbox">${multi ? (mine ? '[x]' : '[ ]') : (mine ? '(•)' : '( )')}</span> <span class="pname">${esc(o)}</span> <span class="pbar"><i style="width:${pct}%"></i></span> <span class="pcnt">${who.length}</span></div>`;
+  }).join('');
+  return `<div class="poll" data-chat="${esc(m.chat)}" data-id="${esc(m.id)}" data-multi="${multi ? 1 : 0}">${rows}<div class="pfoot">${total} voto${total === 1 ? '' : 's'}${multi ? ' · pode marcar mais de uma' : ''} · clique para votar</div></div>`;
+}
+async function pollClick(el) {
+  const box = el.closest('.poll'); const ln = box.closest('.ln');
+  const w = [...S.wins.values()].find((x) => x.buf?.contains(box)); if (!w) return;
+  const hist = await api('wa:history', box.dataset.chat).catch(() => []);
+  const m = hist.find((x) => x.id === box.dataset.id); if (!m?.poll) return;
+  const opt = m.poll.options[+el.dataset.i];
+  const cur = m.poll.votes?.me?.options || [];
+  let sel;
+  if (box.dataset.multi === '1') sel = cur.includes(opt) ? cur.filter((x) => x !== opt) : [...cur, opt];
+  else sel = cur.length === 1 && cur[0] === opt ? [] : [opt];
+  try {
+    const poll = await api('wa:pollVote', box.dataset.chat, box.dataset.id, sel);
+    box.outerHTML = pollHtml({ ...m, poll });
+    w.add(T.info(sel.length ? `Você votou: ${C}12${sel.join(', ')}` : 'Voto retirado.'));
+  } catch (e) { w.add(T.err(friendlyError(e, 'votar na enquete'))); }
+  void ln;
+}
+
+// ---------------- figurinhas (Ctrl+Shift+Espaço) ----------------
+const STK_SVG = '<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 2.5h11v7l-4 4h-7z" fill="#fff" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M13.5 9.5h-4v4" fill="#ddd" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="6" cy="6.5" r=".9" fill="currentColor"/><circle cx="9.5" cy="6.5" r=".9" fill="currentColor"/><path d="M5.5 9c.8.9 2.4 1 3.3.2" stroke="currentColor" stroke-width="1" fill="none" stroke-linecap="round"/></svg>';
+let stPop = null;
+const stUrlCache = new Map();
+function closeStickers() { if (stPop) { stPop.io?.disconnect(); stPop.el.remove(); stPop = null; } }
+// imagem qualquer -> figurinha (webp 512x512, fundo transparente)
+async function imageToSticker(blob) {
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('imagem inválida')); i.src = url; });
+    const cv = document.createElement('canvas'); cv.width = cv.height = 512; const g = cv.getContext('2d');
+    const s = Math.min(512 / img.width, 512 / img.height); const w = img.width * s, hh = img.height * s;
+    g.drawImage(img, (512 - w) / 2, (512 - hh) / 2, w, hh);
+    for (const q of [0.85, 0.7, 0.5, 0.35]) { const b = await new Promise((r) => cv.toBlob(r, 'image/webp', q)); if (b && b.size < 500 * 1024) return new Uint8Array(await b.arrayBuffer()); }
+    throw new Error('não consegui deixar a figurinha pequena o bastante');
+  } finally { URL.revokeObjectURL(url); }
+}
+async function openStickers(w, anchor, tab) {
+  if (stPop) { const same = stPop.w === w; closeStickers(); if (same && !tab) return; }
+  if (!w?.jid) return;
+  if (S.conn !== 'online') return w.add(T.err('Você não está conectado.'));
+  const el = h('div', { class: 'emojipop stkpop' });
+  el.innerHTML = `<div class="etabs"><button class="etab stab" data-t="favs">Favoritas</button><button class="etab stab" data-t="recv">Recebidas</button><button class="etab stab" data-t="mine">Minhas</button><span style="flex:1"></span><button class="eclose" title="Fechar (Esc)">✕</button></div><div class="egrid sgrid"></div><div class="efoot sfoot"><button class="btn srefresh">Atualizar favoritas</button><button class="btn screate">Criar de imagem...</button><input type="file" accept="image/*" class="sfile" hidden></div>`;
+  document.body.appendChild(el);
+  stPop = { el, w };
+  const grid = $('.sgrid', el);
+  let data = null, cur = tab || 'favs';
+  const queue = []; let busy = 0;
+  const pump = () => {
+    while (busy < 3 && queue.length) {
+      const img = queue.shift(); if (!img.isConnected) continue;
+      const src = JSON.parse(img.dataset.src); const k = img.dataset.src;
+      busy++;
+      (stUrlCache.has(k) ? Promise.resolve(stUrlCache.get(k)) : api('st:url', src).then((u) => { stUrlCache.set(k, u); return u; }))
+        .then((u) => { img.src = u; }).catch(() => { img.closest('.st')?.remove(); }).finally(() => { busy--; pump(); });
+    }
+  };
+  const io = stPop.io = new IntersectionObserver((ents) => { for (const e of ents) if (e.isIntersecting && !e.target.src) { io.unobserve(e.target); queue.push(e.target); } pump(); }, { root: grid });
+  const render = () => {
+    el.querySelectorAll('.stab').forEach((b) => b.classList.toggle('on', b.dataset.t === cur));
+    const list = data ? data[cur] : [];
+    const empty = { favs: 'Nenhuma favorita ainda. Clique em "Atualizar favoritas" para buscar as do seu WhatsApp (as que você marcou com estrela no celular).', recv: 'Nenhuma figurinha recebida no histórico ainda.', mine: 'Nenhuma figurinha sua ainda. Clique com o botão direito numa figurinha do chat > Guardar em Minhas, ou crie uma de uma imagem.' }[cur];
+    const note = cur === 'favs' && data?.hiddenFavs && !S.cfg.hideFavNote ? `<div class="etitle snote"><button class="snote-x" title="Fechar e não mostrar mais">✕</button>${data.hiddenFavs} favorita${data.hiddenFavs === 1 ? '' : 's'} antiga${data.hiddenFavs === 1 ? '' : 's'} não aparece${data.hiddenFavs === 1 ? '' : 'm'}: o WhatsApp não manda a imagem dela${data.hiddenFavs === 1 ? '' : 's'} para outros aparelhos. Elas aparecem aqui quando alguém mandar a mesma figurinha numa conversa.</div>` : '';
+    grid.innerHTML = note + (list.length ? list.map((x, i) => `<span class="st" data-i="${i}" title="Clique para enviar"><img data-src="${esc(JSON.stringify(x))}" draggable="false"></span>`).join('') : `<div class="etitle" style="font-weight:normal">${esc(empty)}</div>`);
+    grid.querySelectorAll('img').forEach((i) => io.observe(i));
+  };
+  const load = async () => { try { data = await api('st:list'); } catch (e) { data = { favs: [], recv: [], mine: [] }; w.add(T.err(friendlyError(e, 'listar as figurinhas'))); } render(); };
+  el.querySelectorAll('.stab').forEach((b) => b.addEventListener('click', () => { cur = b.dataset.t; render(); }));
+  grid.addEventListener('click', (e) => { if (e.target.closest('.snote-x')) { e.stopPropagation(); setCfg({ hideFavNote: true }); e.target.closest('.snote').remove(); } }, true);
+  $('.eclose', el).addEventListener('click', closeStickers);
+  grid.addEventListener('click', async (e) => {
+    const st = e.target.closest('.st'); if (!st || !data) return;
+    const src = data[cur][+st.dataset.i];
+    const keep = e.shiftKey; if (!keep) closeStickers();
+    try { const m = await api('st:send', w.jid, src); if (m) renderMsg(w, m); } catch (er) { w.add(T.err(friendlyError(er, 'enviar a figurinha'))); }
+    w.edit?.focus();
+  });
+  grid.addEventListener('contextmenu', (e) => {
+    const st = e.target.closest('.st'); if (!st || !data) return; e.preventDefault();
+    const src = data[cur][+st.dataset.i];
+    const items = [['Enviar', () => api('st:send', w.jid, src).then((m) => m && renderMsg(w, m)).catch((er) => w.add(T.err(friendlyError(er, 'enviar a figurinha'))))]];
+    if (cur === 'mine') items.push(['Remover de Minhas', async () => { await api('st:removeMine', src.file); await load(); }]);
+    else items.push(['Guardar em Minhas', async () => { await api('st:addMine', src); await load(); }]);
+    popup(e, items);
+  });
+  $('.srefresh', el).addEventListener('click', async (e) => {
+    const b = e.target; b.disabled = true; b.textContent = 'Buscando...';
+    try { const n = await api('st:refresh'); stUrlCache.clear(); await load(); b.textContent = `${n} favorita${n === 1 ? '' : 's'}`; } catch (er) { b.textContent = 'Atualizar favoritas'; w.add(T.err(friendlyError(er, 'buscar as favoritas'))); }
+    b.disabled = false;
+  });
+  const fileIn = $('.sfile', el);
+  $('.screate', el).addEventListener('click', () => fileIn.click());
+  fileIn.addEventListener('change', async () => {
+    const f = fileIn.files[0]; if (!f) return;
+    try { await api('st:saveMine', await imageToSticker(f)); cur = 'mine'; await load(); } catch (er) { w.add(T.err(friendlyError(er, 'criar a figurinha'))); }
+    fileIn.value = '';
+  });
+  // posição (o popup usa zoom)
+  const z = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--z')) || 1;
+  const r = (anchor || w.edit).getBoundingClientRect();
+  el.style.left = Math.max(4, Math.min(innerWidth - el.offsetWidth * z - 4, r.left)) / z + 'px';
+  el.style.top = Math.max(4, r.top - el.offsetHeight * z - 4) / z + 'px';
+  await load();
+  // primeira vez: busca as favoritas do WhatsApp sozinho
+  if (cur === 'favs' && data && (!data.favs.length || data.stale) && !S._favTried) { S._favTried = true; $('.srefresh', el).click(); }
+}
+addEventListener('mousedown', (e) => { if (stPop && !stPop.el.contains(e.target) && !e.target.closest('.stkbtn, #popup, .menu')) closeStickers(); }, true);
+addEventListener('keydown', (e) => { if (stPop && e.key === 'Escape') closeStickers(); });
+
+// ---------------- Ctrl+V com imagem / arquivo copiado ----------------
+async function pasteFiles(w, e) {
+  const files = [...(e.clipboardData?.files || [])];
+  if (!files.length || !w.jid) return;
+  e.preventDefault();
+  for (const f of files) {
+    let p = ''; try { p = window.cw.filePath(f); } catch {}
+    const isImg = /^image\//.test(f.type);
+    const url = isImg ? URL.createObjectURL(f) : '';
+    const name = p ? p.split(/[\\/]/).pop() : f.name || 'imagem.png';
+    const ok = await dialog({
+      title: 'Enviar para ' + w.name, width: 420,
+      body: `${isImg ? `<img src="${url}" class="paste-prev">` : `<div style="margin:6px 0">Arquivo: <b>${esc(name)}</b> (${Math.max(1, Math.round(f.size / 1024))} KB)</div>`}<div class="drow">Legenda: <input type="text" class="paste-cap" style="flex:1" placeholder="(opcional)"></div>`,
+      onOpen: (d) => setTimeout(() => $('.paste-cap', d).focus(), 30),
+      buttons: [['Enviar', (d) => ({ cap: $('.paste-cap', d).value })], ...(isImg ? [['Como figurinha', () => ({ sticker: true })]] : []), ['Cancelar', null]]
+    });
+    if (url) URL.revokeObjectURL(url);
+    if (!ok) continue;
+    try {
+      if (ok.sticker) {
+        const tp = await api('app:saveTemp', await imageToSticker(f), '.webp');
+        const m = await api('st:send', w.jid, { kind: 'tmp', file: tp.split(/[\\/]/).pop() }); if (m) renderMsg(w, m);
+        continue;
+      }
+      const temp = !p;
+      if (!p) p = await api('app:saveTemp', new Uint8Array(await f.arrayBuffer()), '.' + ((f.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace(/[^a-z0-9]/g, '') || 'png'));
+      await sendFile(w, p, ok.cap, temp ? { label: 'imagem colada' } : undefined);
+    } catch (err) { w.add(T.err(friendlyError(err, 'enviar o arquivo'))); }
+  }
+}
+
+// ---------------- mensagem de voz ----------------
+const MIC_SVG = '<svg viewBox="0 0 16 16" width="14" height="14"><rect x="5.5" y="1" width="5" height="9" rx="2.5" fill="currentColor"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v3M5.5 15h5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>';
+async function recordVoice(w) {
+  if (S.conn !== 'online') return w.add(T.err('Você não está conectado.'));
+  if (w.rec) return;
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch (e) { return w.add(T.err('Não consegui usar o microfone: ' + (/denied|permission/i.test(e.message) ? 'permissão negada.' : /not ?found|device/i.test(e.message) ? 'nenhum microfone encontrado.' : e.message))); }
+  const mr = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 32000 });
+  const chunks = []; const levels = [];
+  mr.ondataavailable = (ev) => ev.data.size && chunks.push(ev.data);
+  // nível do som para a "onda" que o WhatsApp mostra
+  const ac = new AudioContext(); const an = ac.createAnalyser(); an.fftSize = 512; ac.createMediaStreamSource(stream).connect(an);
+  const buf = new Uint8Array(an.fftSize);
+  const t0 = Date.now();
+  const bar = h('div', { class: 'recbar' }, `<span class="recdot">●</span> Gravando <b class="rect">0:00</b> <span class="recmeter"><i></i></span> <button class="btn rsend">Enviar</button> <button class="btn rcancel">Cancelar</button>`);
+  w.body.insertBefore(bar, w.replyEl);
+  w.mic.classList.add('on');
+  const tick = setInterval(() => {
+    an.getByteTimeDomainData(buf);
+    let peak = 0; for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
+    levels.push(Math.min(100, Math.round((peak / 128) * 160)));
+    const sec = Math.floor((Date.now() - t0) / 1000);
+    $('.rect', bar).textContent = `${Math.floor(sec / 60)}:${pad(sec % 60)}`;
+    $('.recmeter i', bar).style.width = Math.min(100, (peak / 128) * 160) + '%';
+    if (sec >= 600) rec.finish(true); // limite: 10 minutos
+  }, 100);
+  const rec = w.rec = {
+    finish(send) {
+      if (rec.done) return; rec.done = true;
+      clearInterval(tick); bar.remove(); w.mic.classList.remove('on'); w.rec = null;
+      mr.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop()); ac.close().catch(() => {});
+        if (!send) return w.add(T.info('Gravação cancelada.'));
+        if (Date.now() - t0 < 700) return w.add(T.info('Gravação muito curta.'));
+        try {
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+          const v = await api('app:voice', new Uint8Array(await blob.arrayBuffer()));
+          // 64 pontos de 0 a 100
+          const wf = new Uint8Array(64); for (let i = 0; i < 64; i++) { const a = Math.floor((i * levels.length) / 64), b = Math.max(a + 1, Math.floor(((i + 1) * levels.length) / 64)); wf[i] = Math.max(0, ...levels.slice(a, b)); }
+          await sendFile(w, v.path, '', { ptt: true, seconds: v.seconds, waveform: btoa(String.fromCharCode(...wf)) });
+        } catch (e) { w.add(T.err(friendlyError(e, 'enviar a mensagem de voz'))); }
+      };
+      try { mr.stop(); } catch {}
+    }
+  };
+  $('.rsend', bar).addEventListener('click', () => rec.finish(true));
+  $('.rcancel', bar).addEventListener('click', () => rec.finish(false));
+  mr.start(250);
+  w.edit.focus();
+}
+
 // Janela de lista (estilo "Lista de Canais") com filtro
+// ---------------- localizar (Ctrl+F) na janela ----------------
+const foldCh = (c) => c.normalize('NFD')[0].toLowerCase();
+const foldStr = (t) => Array.from(t, foldCh).join('');
+function findIn(w, q) {
+  const ranges = [];
+  const nq = foldStr(q || '');
+  if (!nq || !w.buf) return ranges;
+  for (const ln of w.buf.querySelectorAll('.ln')) {
+    // junta os pedaços de texto da linha (cores viram <span>) e guarda onde cada um começa
+    const nodes = []; let full = '';
+    const tw = document.createTreeWalker(ln, NodeFilter.SHOW_TEXT);
+    for (let n = tw.nextNode(); n; n = tw.nextNode()) { if (n.parentElement.closest('.reacts, .inmedia')) continue; nodes.push([n, full.length]); full += n.data; }
+    // fold por unidade UTF-16, para os índices baterem com o DOM
+    let f = ''; for (let i = 0; i < full.length; i++) { const c = full[i]; f += /[\ud800-\udfff]/.test(c) ? c : foldCh(c); }
+    let at = f.indexOf(nq);
+    while (at >= 0) {
+      const pos = (off) => { let k = nodes.length - 1; while (k > 0 && nodes[k][1] > off) k--; return [nodes[k][0], off - nodes[k][1]]; };
+      const r = new Range(); const [sn, so] = pos(at); const [en, eo] = pos(at + nq.length);
+      try { r.setStart(sn, so); r.setEnd(en, eo); ranges.push(r); } catch {}
+      at = f.indexOf(nq, at + nq.length);
+    }
+  }
+  return ranges;
+}
+function findBar(w, q) {
+  if (!w?.buf) return;
+  let fb = w.findbar;
+  if (!fb) {
+    fb = w.findbar = h('div', { class: 'findbar' }, `Localizar: <input type="text" spellcheck="false"> <span class="fcnt"></span><button class="fbtn" data-d="-1" title="Anterior (mais antiga) — Enter">▲</button><button class="fbtn" data-d="1" title="Próxima (mais nova) — Shift+Enter">▼</button><button class="fbtn" data-x="1" title="Fechar (Esc)">✕</button>`);
+    w.buf.parentElement.appendChild(fb);
+    const input = $('input', fb);
+    const st = { ranges: [], i: -1 };
+    const paint = () => {
+      if (!window.CSS?.highlights) return;
+      CSS.highlights.set('cw-find', new Highlight(...st.ranges));
+      CSS.highlights.set('cw-find-cur', st.i >= 0 && st.ranges[st.i] ? new Highlight(st.ranges[st.i]) : new Highlight());
+      $('.fcnt', fb).textContent = input.value ? (st.ranges.length ? `${st.i + 1}/${st.ranges.length}` : 'nada') : '';
+      fb.classList.toggle('none', !!input.value && !st.ranges.length);
+      const r = st.ranges[st.i];
+      if (r) { const el = r.startContainer.parentElement.closest('.ln'); if (el) { const b = w.buf, top = el.offsetTop - b.clientHeight / 2; b.scrollTop = Math.max(0, top); } }
+    };
+    const search = () => { st.ranges = findIn(w, input.value); st.i = st.ranges.length - 1; paint(); };
+    const step = (d) => { if (!st.ranges.length) return search(); st.i = (st.i + d + st.ranges.length) % st.ranges.length; paint(); };
+    fb._search = search; fb._paint = paint;
+    fb._pick = (ln) => { const k = st.ranges.findIndex((r) => ln.contains(r.startContainer)); if (k >= 0) { st.i = k; paint(); } };
+    input.addEventListener('input', search);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { step(e.shiftKey ? 1 : -1); e.preventDefault(); }
+      else if (e.key === 'Escape') { close(); e.preventDefault(); }
+      else if (e.key === 'F3') { step(e.shiftKey ? 1 : -1); e.preventDefault(); }
+      e.stopPropagation();
+    });
+    const close = () => { fb.remove(); w.findbar = null; CSS.highlights?.delete('cw-find'); CSS.highlights?.delete('cw-find-cur'); w.edit?.focus(); };
+    fb.addEventListener('mousedown', (e) => e.stopPropagation());
+    fb.querySelectorAll('.fbtn').forEach((b) => b.addEventListener('click', () => (b.dataset.x ? close() : step(+b.dataset.d))));
+  }
+  const input = $('input', fb);
+  if (q != null) input.value = q;
+  input.focus(); input.select();
+  fb._search();
+  return fb;
+}
+
+// ---------------- /buscar: procura em todas as conversas ----------------
+async function cmdSearch(q, w) {
+  q = (q || '').trim();
+  if (!q) return w.add(T.info(`Uso: ${C}12/buscar <texto>${C}2 — procura em todas as conversas (histórico e logs). Ctrl+F procura só na janela.`));
+  let res = [];
+  try { res = await api('wa:search', q); } catch (e) { return w.add(T.err(friendlyError(e, 'buscar'))); }
+  if (!res.length) return w.add(T.info(`Nada encontrado para ${C}12"${q}"`));
+  const when = (r) => (r.ts ? new Date(r.ts * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : r.time ? `log ${r.time}` : '');
+  const where = (r) => (r.chat ? (r.group ? chanOf(r.chat, r.chatName) : nickFor(r.chat, r.chatName || labelFor(r.chat))) : (r.group ? '#' : '') + r.chatName);
+  const nickOfNum = (n) => { for (const [k, j] of S.nickIdx) if (num(j) === n) return k; return null; };
+  for (const r of res) {
+    for (const mt of r.mentions || []) r.text = r.text.split('@' + mt.num).join('@' + cleanNick(mt.nick));
+    r.text = r.text.replace(/@(\d{8,})/g, (all, n) => { const k = nickOfNum(n); return k ? '@' + k : all; });
+  }
+  const rows = res.map((r, i) => ({ id: String(i), q: `${where(r)} ${r.nick} ${r.text}`, cells: [when(r), where(r), r.fromMe ? myNick() : cleanNick(r.nick), r.text.replace(/\s+/g, ' ').slice(0, 200)] }));
+  listWindow('busca', `Busca: ${q}`, [{ t: 'Data' }, { t: 'Conversa' }, { t: 'Nick' }, { t: 'Mensagem' }], rows, '', async (id) => {
+    const r = res[+id]; if (!r) return;
+    if (!r.chat) return r.log ? api('app:openLog', r.log) : null;
+    const cw = r.group ? await openChannel(r.chat, true) : await openQuery(r.chat, r.chatName, true);
+    if (cw._ready) await cw._ready;
+    setTimeout(() => {
+      const ln = r.id && cw.buf.querySelector(`.ln[data-id="${CSS.escape(r.id)}"]`);
+      const fb = findBar(cw, q);
+      if (ln && fb) { // posiciona na mensagem escolhida
+        fb._pick(ln); ln.scrollIntoView({ block: 'center' }); ln.classList.add('flash'); setTimeout(() => ln.classList.remove('flash'), 1600);
+      }
+    }, 50);
+  });
+  w.add(T.info(`${res.length}${res.length >= 500 ? '+' : ''} resultado(s) para ${C}12"${q}"${C}2 — duplo-clique abre a conversa.`));
+}
+
 function listWindow(id, title, cols, rows, filter, onOpen, menu, refresh) {
   let w = getWin(id);
   if (!w) w = makeWin(id, 'list', title, {});
@@ -1729,15 +2325,41 @@ async function cmdRecent(n = 30, auto = false) {
   const byId = new Map((S.contacts || []).map((c) => [c.id, c]));
   const isNum = (x) => !x || /^\+?[\d\s()-]+$/.test(String(x));
   const nameOf = (c) => { const k = byId.get(c.id); for (const x of [k?.nick, k?.push, c.name]) if (!isNum(x)) return x; return '+' + num(c.id); };
-  const list = (S.chats || []).filter((c) => !c.group && c.ts && /@s\.whatsapp\.net$/.test(c.id)).sort((a, b) => b.ts - a.ts).slice(0, Math.max(1, Math.min(200, Number(n) || 30))).map((c) => ({ ...c, name: nameOf(c) }));
+  const hid = S.cfg.recentHidden || {};
+  // removidos da lista voltam sozinhos quando a conversa tiver mensagem nova
+  const list = (S.chats || []).filter((c) => !c.group && c.ts && /@s\.whatsapp\.net$/.test(c.id) && !(hid[c.id] && c.ts <= hid[c.id])).sort((a, b) => b.ts - a.ts).slice(0, Math.max(1, Math.min(200, Number(n) || 30))).map((c) => ({ ...c, name: nameOf(c) }));
   if (!list.length) { if (!auto) cur().add(T.info('Nenhuma conversa recente ainda.')); return; }
   const fmt = (t) => { const d = new Date(t * 1000), hoje = new Date(); return d.toDateString() === hoje.toDateString() ? 'hoje ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
   const lw = listWindow('recent', 'Contatos Recentes', [{ t: 'Nick' }, { t: 'Número' }, { t: 'Última conversa' }],
     list.map((c) => ({ id: c.id, q: `${alias(c.id)} ${c.name || ''} ${num(c.id)}`, cells: [nickFor(c.id, c.name), '+' + num(c.id), fmt(c.ts)] })),
     '', (id) => { const c = list.find((x) => x.id === id); openQuery(id, c?.name, true); },
-    (id) => { const c = list.find((x) => x.id === id); return [['Query (pvt)', () => openQuery(id, c?.name, true)], ['Whois', () => run('/whois +' + num(id), cur())], ['Definir apelido local...', () => aliasDialog(id, nickFor(id, c?.name))], ['Copiar número', () => copyText('+' + num(id))], '-', ['Não abrir esta lista ao conectar', () => setCfg({ showRecent: false }), false, { checked: S.cfg.showRecent === false }]]; },
+    (id) => { const c = list.find((x) => x.id === id); return [['Query (pvt)', () => openQuery(id, c?.name, true)], ['Whois', () => run('/whois +' + num(id), cur())], ['Definir apelido local...', () => aliasDialog(id, nickFor(id, c?.name))], ['Copiar número', () => copyText('+' + num(id))], '-', ['Remover da lista (Del)', () => hideRecent([id], n)], ['Limpar a lista toda', () => { if (confirm('Tirar todos os contatos da lista de recentes? (eles voltam quando chegar mensagem nova)')) hideRecent(list.map((x) => x.id), n); }], '-', ['Não abrir esta lista ao conectar', () => setCfg({ showRecent: false }), false, { checked: S.cfg.showRecent === false }]]; },
     async () => { if (S.conn === 'online') { try { S.chats = await api('wa:chats'); S.contacts = await api('wa:contacts'); } catch {} } return cmdRecent(n); });
   lw.setIcon('msn');
+  if (!lw._delKey) {
+    lw._delKey = true;
+    addEventListener('keydown', (e) => {
+      if (e.key !== 'Delete' || S.active !== lw.id || !lw.body.isConnected || document.querySelector('.dlg')) return;
+      const inp = e.target.closest('input'); if (inp && inp.value) return;
+      const tr = lw.body.querySelector('tr.sel:not([hidden])'); if (!tr) return;
+      e.preventDefault(); hideRecent([tr.dataset.id], lw._recentN || 30);
+    });
+  }
+  lw._recentN = n;
+  // botão "Remover" na barra da lista (também: tecla Del ou botão direito)
+  const bar = lw.body.querySelector('.listbar');
+  if (bar && !bar.querySelector('.rmbtn')) {
+    const b = h('button', { class: 'btn rmbtn', title: 'Tira o contato selecionado da lista (volta quando chegar mensagem nova) — tecla Del' }, 'Remover');
+    b.addEventListener('click', () => { const tr = lw.body.querySelector('tr.sel:not([hidden])'); if (tr) hideRecent([tr.dataset.id], lw._recentN || 30); });
+    bar.appendChild(b);
+    const hint = bar.querySelector('.hint'); if (hint) hint.textContent = 'duplo-clique abre · Del remove';
+  }
+}
+async function hideRecent(ids, n) {
+  const hid = { ...(S.cfg.recentHidden || {}) };
+  for (const id of ids) { const c = (S.chats || []).find((x) => x.id === id); hid[id] = c?.ts || Math.floor(Date.now() / 1000); }
+  await setCfg({ recentHidden: hid });
+  return cmdRecent(n);
 }
 async function cmdUsers(filter) {
   if (S.conn !== 'online') return cur().add(T.err('Você não está conectado. Use /server'));
@@ -1856,7 +2478,7 @@ async function showLusers(w = st()) {
   const unread = S.chats.reduce((n, c) => n + (c.unread || 0), 0);
   const inAgenda = contacts.filter((c) => c.my).length;
   const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0) + '%';
-  const row = (label, v, extra) => `${PRE} ${U}${C}2${label}${B}${C}12(${O}${C}12${v}${B}${C}12)` + (extra != null ? ` ${C}12(${O}${C}12${extra}${B}${C}12)` : '');
+  const row = (label, v, extra) => `${PRE} ${U}${C}02${label}${B}${C}12(${O}${C}12${v}${B}${C}12)` + (extra != null ? ` ${C}12(${O}${C}12${extra}${B}${C}12)` : '');
   w.add('-'.repeat(50), { nots: true });
   w.add(row('Conversas privadas', pvts.length, pct(pvts.length, contacts.length || pvts.length)), { nots: true });
   w.add(row('Contatos visíveis na Rede', contacts.length), { nots: true });
@@ -1900,7 +2522,8 @@ async function sysinfo() {
     const i = await api('app:sysinfo');
     $('#sb-ram span').textContent = `Ram: ${i.used}/${i.total}MB (${i.pct}%)`;
     $('#sb-up span').textContent = `${i.os} uptime: ${i.uptime}`;
-    $('#sb-ip span').textContent = `IP: ${i.ip}`;
+    $('#sb-ip span').textContent = `IP: ${i.ip}${i.publicIp && i.publicIp !== i.ip ? ` · Público: ${i.publicIp}` : ''}`;
+    S.ip = i.ip; S.publicIp = i.publicIp || '';
     $('#sb-server span').textContent = S.conn === 'online' ? `web.whatsapp.com (+${num(S.me?.id)})` : S.conn === 'connecting' ? 'conectando...' : '(não conectado)';
   } catch {}
 }
@@ -1931,6 +2554,7 @@ function dataKey(file) { const n = SC.normPath(file); return Object.keys(SC.data
 function persistData(key) { api('scripts:writeData', key, (SC.data[key] || []).join('\r\n')).catch((e) => st().add(T.err('Script: ' + friendlyError(e)))); }
 const SC = new CwScript({
   me: () => myNick(),
+  ip: () => S.ip || '', publicIp: () => S.publicIp || '',
   active: () => cur()?.name || 'Status',
   version: () => S.version || '',
   echo: (where, text) => { const w = where === 'status' ? st() : where && where !== 'active' ? winByName(where) || cur() : cur(); w.add(text); },
@@ -2081,6 +2705,7 @@ async function init() {
   S.cfg = await api('cfg:set', { runs: (S.cfg.runs || 0) + 1 });
   S.version = await api('app:version').catch(() => '');
   try { S.frases = (await (await fetch('assets/frases.txt')).text()).split('\n').map((x) => x.trim()).filter(Boolean); } catch {}
+  await loadThemes();
   applyTheme();
   setInterval(sysinfo, 5000); sysinfo();
   buildMenubar();
@@ -2092,10 +2717,12 @@ async function init() {
   banner(status);
   play('start');
   window.cw.on('wa:event', onWa);
+  window.cw.on('cfg:changed', (c) => { S.cfg = c; });
+  window.cw.on('app:update', (i) => showUpdate(i));
   window.cw.on('ui:open', (jid) => { const w = getWin(jid); if (w) activate(jid); });
   window.cw.on('win:state', (s) => document.body.classList.toggle('maxed', s === 'max'));
   addEventListener('blur', () => document.body.classList.add('inactive'));
-  addEventListener('focus', () => { document.body.classList.remove('inactive'); const w = S.wins.get(S.active); if (w?.jid && S.conn === 'online') api('wa:read', w.jid).catch(() => {}); });
+  addEventListener('focus', () => { document.body.classList.remove('inactive'); const w = S.wins.get(S.active); clearUnread(w); if (w?.jid && S.conn === 'online') api('wa:read', w.jid).catch(() => {}); });
   $('#titlebar').addEventListener('dblclick', () => api('win:max'));
   document.querySelectorAll('.tbtns [data-cmd]').forEach((b) => b.addEventListener('click', () => api(b.dataset.cmd)));
   addEventListener('keydown', (e) => {
@@ -2105,6 +2732,7 @@ async function init() {
     else if (e.ctrlKey && e.key.toLowerCase() === 'w') { const w = cur(); if (w.type !== 'status') w.close(); e.preventDefault(); }
     else if (e.altKey && e.key.toLowerCase() === 'o') { dlgOptions(); e.preventDefault(); }
     else if (e.altKey && e.key.toLowerCase() === 'r') { if (!document.querySelector('.sedit')) scriptEditor(); e.preventDefault(); }
+    else if (e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'f') { const w = cur(); if (w?.buf) { findBar(w, window.getSelection().toString().trim().split('\n')[0] || null); e.preventDefault(); } }
     else if (e.ctrlKey && e.key === 'F12') { run(S.conn === 'offline' ? '/server' : '/disconnect', st()); e.preventDefault(); }
   });
   setInterval(updateAppTitle, 1000);

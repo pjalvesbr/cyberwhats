@@ -29,7 +29,7 @@ Arquivos recebidos vão para `Documentos\CyberWhats\Recebidos`.
 
 ## O que tem
 
-- **Visual do CyberScript 3.2**: janelas MDI, switchbar, toolbar, barra de status (RAM, uptime, IP),
+- **Visual do CyberScript 3.2**: janelas MDI, switchbar, toolbar, barra de status (RAM, uptime, IP local e público),
   theme "Padrão" (`>>>`), fonte Fixedsys, ícones, botões e sons originais, MOTD estilo BRASnet.
 - **Canais e pvts**: nicklist com `@` para admins e `.` para o dono, tópico, modos, entrou/saiu/kick,
   auto-join, notify, ignore, away com janela @Away.
@@ -38,7 +38,16 @@ Arquivos recebidos vão para `Documentos\CyberWhats\Recebidos`.
   duplo-clique no pvt dá whois, Tab completa nicks, Alt+1..9 troca de janela, clicar de novo no botão
   da janela ativa volta para a anterior.
 - **Apelidos locais** para você, contatos e canais (`/meunick`, `/apelido`) — não mudam nada no WhatsApp.
-- **Temas**: Padrão, Clássico e Dark.
+- **Temas**: Padrão, Clássico, Dark e os **22 temas originais do CyberScript** (BitchX, Winter, eXagon,
+  Hysteria, Seeper...) com seus schemes, no Theme Manager ou com `/tema`.
+- **Busca**: Ctrl+F procura na janela; `/buscar` procura em todas as conversas (histórico e logs).
+- **Bandeja do Windows**: minimiza para perto do relógio, inicia junto com o Windows e mostra quantas
+  mensagens novas chegaram (no ícone da bandeja e na barra de tarefas).
+- **Imagem colada e voz**: Ctrl+V com uma imagem copiada envia a imagem; o botão do microfone grava e
+  envia mensagem de voz.
+- **Emojis e figurinhas**: Ctrl+Espaço abre a lista de emojis (com busca em português); Ctrl+Shift+Espaço abre suas figurinhas (favoritas do WhatsApp, recebidas e as suas), e dá para criar figurinha de uma imagem.
+- **Prévia de links** (título do YouTube, Instagram...) e **enquetes** com votação (`/enquete`).
+- **Aviso de versão nova** (procura no GitHub; `/atualizar`).
 - **CyberWhats Script**: scripts editáveis com aliases, eventos e menus — já vem com as
   **Frases** do CyberScript e o **Gama Game**.
 
@@ -60,7 +69,12 @@ Arquivos recebidos vão para `Documentos\CyberWhats\Recebidos`.
 | `/meunick` · `/apelido <alvo> <apelido>` | apelidos locais |
 | `/away [msg]` · `/back` | away |
 | `/notify` · `/ignore` · `/autojoin on\|off\|agora` | listas |
-| `/enviar` | envia arquivo (ou arraste para a janela) |
+| `/enviar` · `/gravar` | envia arquivo (ou arraste / cole com Ctrl+V) · grava mensagem de voz |
+| `/figurinhas` | abre suas figurinhas (Ctrl+Shift+Espaço) |
+| `/enquete Pergunta? \| op1 \| op2` | cria enquete (`-m` = várias respostas); clique nas opções para votar |
+| `/buscar <texto>` · Ctrl+F | procura em todas as conversas · procura na janela |
+| `/tema [nome] [scheme]` · `/icones` | troca o tema (sem nome lista os temas) · ícones modernos/clássicos |
+| `/atualizar` | procura versão nova |
 | `/motd` · `/lusers` · `/dicas` · `/interface <px>` · `/fonte <px>` | diversos |
 | `/frase [categoria]` · `/kickfrase <nick>` · `/gama on\|off\|placar` | scripts que vêm com o app |
 | `/scripts` (Alt+R) · `/recarregar` · `//comando` | scripts |

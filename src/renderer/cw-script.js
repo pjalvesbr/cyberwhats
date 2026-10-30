@@ -782,7 +782,7 @@ const ID = {
   timer(a, ctx, prop) { const n = a[0]; if (n === '0') return String(this.timers.size); return this.timers.has(n) ? n : ''; },
   input(a) { return this.host.ask(a[0] || 'Digite:'); },
   url() { return ''; },
-  ip() { return '127.0.0.1'; },
+  ip(a) { return (a[0] === 'publico' || a[0] === 'public' ? this.host.publicIp?.() : this.host.ip?.()) || '127.0.0.1'; },
   host() { return 'cyberwhats'; },
   address(a) { return (a[0] || '') + '!' + 'whatsapp'; },
   network2() { return 'WhatsApp'; },

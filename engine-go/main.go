@@ -1,17 +1,23 @@
 // cw-engine: motor do CyberWhats baseado na whatsmeow (protocolo multi-device do WhatsApp).
 // Conversa com o app (Electron) por JSON, uma mensagem por linha, em stdin/stdout:
-//   pedido:   {"id":1,"cmd":"send","args":{...}}
-//   resposta: {"id":1,"ok":true,"data":...}   ou   {"id":1,"ok":false,"error":"..."}
-//   evento:   {"event":"message","data":{...}}
+//
+//	pedido:   {"id":1,"cmd":"send","args":{...}}
+//	resposta: {"id":1,"ok":true,"data":...}   ou   {"id":1,"ok":false,"error":"..."}
+//	evento:   {"event":"message","data":{...}}
 package main
 
 import (
 	"bufio"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.mau.fi/whatsmeow/util/cbcutil"
+	"go.mau.fi/whatsmeow/util/hkdfutil"
 	"io"
 	"mime"
 	"net/http"
@@ -293,9 +299,27 @@ func entryOf(evt *events.Message, live bool) map[string]any {
 		emit("reaction", map[string]any{"chat": chat.String(), "emoji": r.GetText(), "nick": e["nick"], "sender": e["sender"], "fromMe": info.IsFromMe, "targetId": r.GetKey().GetID(), "live": live})
 		return nil
 	}
+	// voto em enquete: decifra e manda só quais opções (hash sha256 do nome) a pessoa marcou
+	if pu := m.GetPollUpdateMessage(); pu != nil {
+		if vote, err := cli.DecryptPollVote(ctx, evt); err == nil {
+			hs := []string{}
+			for _, h := range vote.GetSelectedOptions() {
+				hs = append(hs, hex.EncodeToString(h))
+			}
+			emit("poll-vote", map[string]any{"chat": chat.String(), "pollId": pu.GetPollCreationMessageKey().GetID(), "nick": e["nick"], "sender": e["sender"], "fromMe": info.IsFromMe, "hashes": hs, "ts": info.Timestamp.Unix(), "live": live})
+		}
+		return nil
+	}
 	switch {
 	case m.GetConversation() != "" || m.GetExtendedTextMessage() != nil:
 		e["text"] = textOf(m)
+		if xt := m.GetExtendedTextMessage(); xt != nil && (xt.GetTitle() != "" || xt.GetDescription() != "") {
+			lk := map[string]any{"url": xt.GetMatchedText(), "title": xt.GetTitle(), "desc": xt.GetDescription()}
+			if t := xt.GetJPEGThumbnail(); len(t) > 0 && len(t) < 100*1024 {
+				lk["thumb"] = "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(t)
+			}
+			e["link"] = lk
+		}
 	case m.GetImageMessage() != nil:
 		im := m.GetImageMessage()
 		media(e, "image", im.GetCaption(), "", im.GetFileLength(), 0, false)
@@ -342,7 +366,8 @@ func entryOf(evt *events.Message, live bool) map[string]any {
 		for _, o := range p.GetOptions() {
 			opts = append(opts, o.GetOptionName())
 		}
-		e["kind"], e["media"], e["caption"] = "media", "Enquete", p.GetName()+" — "+strings.Join(opts, " | ")
+		e["kind"], e["text"] = "poll", p.GetName()
+		e["poll"] = map[string]any{"name": p.GetName(), "options": opts, "max": p.GetSelectableOptionsCount()}
 	case m.GetEventMessage() != nil:
 		e["kind"], e["media"], e["caption"] = "media", "Evento", m.GetEventMessage().GetName()
 	case m.GetButtonsResponseMessage() != nil:
@@ -580,6 +605,18 @@ func onEvent(raw any) {
 		emit("chats", listChats())
 	case *events.PushName:
 		// nomes atualizados: nada a fazer, a store da whatsmeow guarda
+	case *events.AppState:
+		// figurinhas favoritas do WhatsApp (sincronizadas entre os aparelhos)
+		if len(evt.Index) > 0 && evt.Index[0] == "favoriteSticker" && evt.SyncActionValue != nil && evt.GetStickerAction() != nil {
+			sa := evt.GetStickerAction()
+			key := ""
+			if len(evt.Index) > 1 {
+				key = evt.Index[1]
+			}
+			st := &waE2E.StickerMessage{URL: sa.URL, DirectPath: sa.DirectPath, MediaKey: sa.MediaKey, FileEncSHA256: sa.FileEncSHA256, Mimetype: sa.Mimetype, Height: sa.Height, Width: sa.Width, FileLength: sa.FileLength, IsAnimated: sa.IsLottie}
+			raw, _ := proto.Marshal(&waE2E.Message{StickerMessage: st})
+			emit("sticker-fav", map[string]any{"key": key, "fav": sa.GetIsFavorite(), "raw": base64.StdEncoding.EncodeToString(raw), "w": sa.GetWidth(), "h": sa.GetHeight(), "ts": evt.GetTimestamp(), "hash": sa.GetImageHash(), "hasKey": len(sa.GetMediaKey()) > 0 && (sa.GetDirectPath() != "" || sa.GetURL() != "")})
+		}
 	case *events.CallOffer:
 		from := pn(evt.From)
 		emit("call", map[string]any{"from": from.String(), "nick": nameOf(from, ""), "video": false})
@@ -772,6 +809,123 @@ func handle(r req) (any, error) {
 		return send(a)
 	case "sendFile":
 		return sendFile(a)
+	case "favStickers":
+		// busca de novo (sincronização completa) as listas onde o WhatsApp guarda as favoritas
+		cli.EmitAppStateEventsOnFullSync = true
+		defer func() { cli.EmitAppStateEventsOnFullSync = false }()
+		var last error
+		for _, n := range []appstate.WAPatchName{appstate.WAPatchRegularLow, appstate.WAPatchRegular, appstate.WAPatchRegularHigh} {
+			if err := cli.FetchAppState(ctx, n, true, false); err != nil {
+				last = err
+			}
+		}
+		return nil, last
+	case "stickerShas":
+		// hash (sha256) de figurinhas do histórico, para achar as favoritas antigas que vêm sem chave
+		out := map[string]string{}
+		if arr, ok := a["items"].([]any); ok {
+			for _, it := range arr {
+				mm, _ := it.(map[string]any)
+				b, err := base64.StdEncoding.DecodeString(str(mm, "raw"))
+				if err != nil {
+					continue
+				}
+				msg := &waE2E.Message{}
+				if proto.Unmarshal(b, msg) != nil {
+					continue
+				}
+				if h := msg.GetStickerMessage().GetFileSHA256(); len(h) > 0 {
+					out[str(mm, "id")] = base64.StdEncoding.EncodeToString(h)
+				}
+			}
+		}
+		return out, nil
+	case "sendSticker":
+		to, err := parseJID(str(a, "jid"))
+		if err != nil {
+			return nil, err
+		}
+		data, err := os.ReadFile(str(a, "path"))
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > 1024*1024 {
+			return nil, errors.New("figurinha maior que 1 MB")
+		}
+		u, err := cli.Upload(ctx, data, whatsmeow.MediaImage)
+		if err != nil {
+			return nil, err
+		}
+		mt := "image/webp"
+		w, h := uint32(512), uint32(512)
+		if v, ok := a["w"].(float64); ok && v > 0 {
+			w = uint32(v)
+		}
+		if v, ok := a["h"].(float64); ok && v > 0 {
+			h = uint32(v)
+		}
+		anim, _ := a["animated"].(bool)
+		st := &waE2E.StickerMessage{URL: &u.URL, DirectPath: &u.DirectPath, MediaKey: u.MediaKey, FileEncSHA256: u.FileEncSHA256, FileSHA256: u.FileSHA256, FileLength: &u.FileLength, Mimetype: &mt, Width: &w, Height: &h, IsAnimated: &anim}
+		m := &waE2E.Message{StickerMessage: st}
+		resp, err := cli.SendMessage(ctx, to, m)
+		if err != nil {
+			return nil, err
+		}
+		return sentEntry(to, resp.ID, resp.Timestamp, m), nil
+	case "pollVote":
+		chat, err := parseJID(str(a, "chat"))
+		if err != nil {
+			return nil, err
+		}
+		sender, _ := types.ParseJID(str(a, "sender"))
+		fm, _ := a["fromMe"].(bool)
+		if fm || sender.IsEmpty() {
+			sender = cli.Store.GetJID().ToNonAD()
+			if s2, _ := types.ParseJID(str(a, "sender")); !s2.IsEmpty() {
+				sender = s2
+			}
+		}
+		opts := []string{}
+		if arr, ok := a["options"].([]any); ok {
+			for _, v := range arr {
+				if s, ok := v.(string); ok {
+					opts = append(opts, s)
+				}
+			}
+		}
+		info := &types.MessageInfo{MessageSource: types.MessageSource{Chat: chat, Sender: sender, IsFromMe: fm, IsGroup: chat.Server == types.GroupServer}, ID: str(a, "id")}
+		msg, err := cli.BuildPollVote(ctx, info, opts)
+		if err != nil {
+			return nil, err
+		}
+		_, err = cli.SendMessage(ctx, chat, msg)
+		return nil, err
+	case "sendPoll":
+		to, err := parseJID(str(a, "jid"))
+		if err != nil {
+			return nil, err
+		}
+		opts := []string{}
+		if arr, ok := a["options"].([]any); ok {
+			for _, v := range arr {
+				if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+					opts = append(opts, strings.TrimSpace(s))
+				}
+			}
+		}
+		if len(opts) < 2 {
+			return nil, errors.New("a enquete precisa de pelo menos 2 opções")
+		}
+		max := 1
+		if v, ok := a["multi"].(bool); ok && v {
+			max = 0
+		}
+		m := cli.BuildPollCreation(str(a, "name"), opts, max)
+		resp, err := cli.SendMessage(ctx, to, m)
+		if err != nil {
+			return nil, err
+		}
+		return sentEntry(to, resp.ID, resp.Timestamp, m), nil
 	case "download":
 		return download(a)
 	case "read":
@@ -1064,8 +1218,22 @@ func send(a map[string]any) (any, error) {
 	}
 	text := str(a, "text")
 	var m *waE2E.Message
-	if ci := quoteCtx(a); ci != nil {
-		m = &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String(text), ContextInfo: ci}}
+	lk, _ := a["link"].(map[string]any)
+	if ci := quoteCtx(a); ci != nil || lk != nil {
+		xt := &waE2E.ExtendedTextMessage{Text: proto.String(text), ContextInfo: ci}
+		if lk != nil {
+			// prévia do link (título/descrição), igual o WhatsApp faz
+			xt.MatchedText = strp(str(lk, "url"))
+			xt.Title = strp(str(lk, "title"))
+			xt.Description = strp(str(lk, "desc"))
+			xt.PreviewType = waE2E.ExtendedTextMessage_NONE.Enum()
+			if t := str(lk, "thumb"); t != "" {
+				if b, err := base64.StdEncoding.DecodeString(t); err == nil && len(b) < 100*1024 {
+					xt.JPEGThumbnail = b
+				}
+			}
+		}
+		m = &waE2E.Message{ExtendedTextMessage: xt}
 	} else {
 		m = &waE2E.Message{Conversation: proto.String(text)}
 	}
@@ -1121,7 +1289,20 @@ func sendFile(a map[string]any) (any, error) {
 		if ext == ".opus" || mt == "audio/ogg" {
 			mt = "audio/ogg; codecs=opus"
 		}
-		m = &waE2E.Message{AudioMessage: &waE2E.AudioMessage{URL: &u.URL, DirectPath: &u.DirectPath, MediaKey: u.MediaKey, Mimetype: &mt, FileEncSHA256: u.FileEncSHA256, FileSHA256: u.FileSHA256, FileLength: &u.FileLength}}
+		am := &waE2E.AudioMessage{URL: &u.URL, DirectPath: &u.DirectPath, MediaKey: u.MediaKey, Mimetype: &mt, FileEncSHA256: u.FileEncSHA256, FileSHA256: u.FileSHA256, FileLength: &u.FileLength}
+		// mensagem de voz gravada no CyberWhats (aparece com o microfone no WhatsApp)
+		if p, _ := a["ptt"].(bool); p && strings.HasPrefix(mt, "audio/ogg") {
+			am.PTT = proto.Bool(true)
+			if sec, ok := a["seconds"].(float64); ok && sec > 0 {
+				am.Seconds = proto.Uint32(uint32(sec + 0.5))
+			}
+			if wf, ok := a["waveform"].(string); ok && wf != "" {
+				if b, err := base64.StdEncoding.DecodeString(wf); err == nil {
+					am.Waveform = b
+				}
+			}
+		}
+		m = &waE2E.Message{AudioMessage: am}
 	default:
 		u, err := up(whatsmeow.MediaDocument)
 		if err != nil {
@@ -1154,7 +1335,13 @@ func download(a map[string]any) (any, error) {
 	if err := proto.Unmarshal(b, m); err != nil {
 		return nil, err
 	}
-	data, err := cli.DownloadAny(ctx, m)
+	var data []byte
+	if st := m.GetStickerMessage(); st != nil && len(st.GetFileSHA256()) != 32 {
+		// figurinha favorita (vem da sincronização sem o hash do arquivo): baixa e decifra direto
+		data, err = downloadNoHash(st.GetURL(), st.GetDirectPath(), st.GetMediaKey(), "WhatsApp Image Keys")
+	} else {
+		data, err = cli.DownloadAny(ctx, m)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1172,6 +1359,59 @@ func download(a map[string]any) (any, error) {
 		mt = m.GetStickerMessage().GetMimetype()
 	}
 	return map[string]any{"data": base64.StdEncoding.EncodeToString(data), "mimetype": mt, "filename": name}, nil
+}
+
+func downloadNoHash(url, directPath string, mediaKey []byte, info string) ([]byte, error) {
+	if len(mediaKey) == 0 {
+		return nil, errors.New("essa figurinha favorita só existe no celular")
+	}
+	urls := []string{}
+	if url != "" {
+		urls = append(urls, url)
+	}
+	if directPath != "" {
+		urls = append(urls, "https://mmg.whatsapp.net"+directPath)
+	}
+	var body []byte
+	var last error = errors.New("figurinha sem endereço")
+	for _, u := range urls {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		req.Header.Set("Origin", "https://web.whatsapp.com")
+		req.Header.Set("Referer", "https://web.whatsapp.com/")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			last = err
+			continue
+		}
+		b, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		resp.Body.Close()
+		if err != nil || resp.StatusCode != 200 {
+			if resp.StatusCode == 403 || resp.StatusCode == 404 || resp.StatusCode == 410 {
+				last = errors.New("essa figurinha expirou no servidor do WhatsApp")
+			} else {
+				last = fmt.Errorf("não consegui baixar a figurinha (status %d)", resp.StatusCode)
+			}
+			continue
+		}
+		body, last = b, nil
+		break
+	}
+	if last != nil {
+		return nil, last
+	}
+	if len(body) <= 10 {
+		return nil, errors.New("figurinha vazia")
+	}
+	keys := hkdfutil.SHA256(mediaKey, nil, []byte(info), 112)
+	iv, cipherKey, macKey := keys[:16], keys[16:48], keys[48:80]
+	ct, mac := body[:len(body)-10], body[len(body)-10:]
+	hm := hmac.New(sha256.New, macKey)
+	hm.Write(iv)
+	hm.Write(ct)
+	if !hmac.Equal(hm.Sum(nil)[:10], mac) {
+		return nil, errors.New("figurinha corrompida")
+	}
+	return cbcutil.Decrypt(cipherKey, iv, ct)
 }
 
 func whois(js string) (any, error) {

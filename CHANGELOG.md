@@ -2,6 +2,24 @@
 
 O CyberWhats usa sempre 3.2.x.y, em homenagem ao CyberScript 3.2.
 
+## 3.2.0.3
+- **22 temas originais do CyberScript** (BitchX, Blue, Calm Blue, Dark, Focalize, Fox, Fragma, Fun-Style, GirlStyle, Hysteria, Monolith, Nature, Padrao, Popua, Rustic Ash, SbIRC, Seeper, SubSeven, Syntax, Waste, Winter, eXagon), com as cores, os formatos de mensagem, o timestamp e os schemes de cada um. Theme Manager com prévia, autor e descrição; também por `/tema`. O Padrão (do xBinho) continua sendo o tema padrão.
+- Trocar de tema redesenha as conversas abertas no formato novo.
+- **Ctrl+F** procura na janela (destaca todas, Enter vai para a anterior, Shift+Enter para a próxima).
+- **`/buscar texto`** procura em todas as conversas (histórico e logs) e lista os resultados; duplo-clique abre a conversa já na mensagem.
+- **Bandeja do Windows**: minimizar para a bandeja, opção de o X deixar rodando na bandeja, iniciar junto com o Windows e contador de mensagens novas no ícone da bandeja e da barra de tarefas (Opções > Windows).
+- **Aviso de versão nova**: procura no GitHub ao abrir (e a cada 12 h) e avisa com o link para baixar; `/atualizar` procura na hora.
+- **Ctrl+V com imagem** copiada envia a imagem (com legenda opcional).
+- **Mensagem de voz**: botão do microfone ao lado da caixa de texto (ou `/gravar`); chega no WhatsApp como áudio gravado, com a onda.
+- **Prévia de links**: título, descrição e miniatura de links do YouTube, Instagram, sites... (nos dois sentidos: quem recebe sua mensagem também vê a prévia).
+- **Enquetes**: aparecem com as opções e os votos; clique para votar. `/enquete` cria uma.
+- Barra de status mostra também o IP público.
+- **Emojis**: Ctrl+Espaço (ou o botão 😊 ao lado da caixa de texto) abre a lista de emojis por categoria, com busca em português e os usados por último.
+- **Figurinhas**: botão ao lado da caixa de texto (ou Ctrl+Shift+Espaço, `/figurinhas`) com três abas: **Favoritas** (as que você favoritou no WhatsApp do celular), **Recebidas** (as que passaram pelas suas conversas) e **Minhas** (guardadas no CyberWhats: botão direito numa figurinha do chat > Guardar em Minhas). Dá para criar figurinha a partir de uma imagem, e o Ctrl+V com imagem tem a opção **Como figurinha**.
+- Contatos Recentes: botão **Remover** (ou Del / botão direito) tira o contato da lista; ele volta quando chegar mensagem nova.
+- Fonte sempre nítida com a escala do Windows em 125%, 150%... (o tamanho é ajustado para a Fixedsys não ficar torta nem cortada; dá para desligar no Theme Manager).
+- Trocar de tema não tira mais a rolagem do fim da conversa.
+
 ## 3.2.0.2
 - Botões das janelas redesenhados, com o texto certo de cada um (Link de Convite, Informações do Grupo, Pasta de Recebidos).
 - Linha **"mensagens novas"** marcando onde começam as mensagens que chegaram desde a última vez; a janela abre mostrando essa linha.
