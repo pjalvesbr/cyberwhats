@@ -1,6 +1,8 @@
 // Prévia de links (título, descrição e miniatura) — como o WhatsApp mostra para YouTube, Instagram etc.
 import { net, nativeImage } from 'electron';
 import fs from 'node:fs';
+import dns from 'node:dns';
+import net0 from 'node:net';
 import path from 'node:path';
 
 const UA = 'WhatsApp/2.24.6.77 A'; // muitos sites só entregam as tags og: para robôs de prévia conhecidos
@@ -36,21 +38,55 @@ function meta(html, names) {
   return '';
 }
 
-async function fetchText(url, ms) {
+// ---- segurança: só http(s) para endereços públicos (nada de file://, rede local ou localhost)
+function privateIp(ip) {
+  if (net0.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number);
+    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
+  }
+  const v = ip.toLowerCase();
+  if (v.startsWith('::ffff:')) return privateIp(v.slice(7));
+  return v === '::' || v === '::1' || v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb') || v.startsWith('ff');
+}
+async function checkUrl(u) {
+  let url; try { url = new URL(u); } catch { throw new Error('endereço inválido'); }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('protocolo não permitido');
+  if (url.username || url.password) throw new Error('endereço com usuário');
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  if (/^localhost$|\.localhost$|\.local$|\.lan$|\.internal$/i.test(host)) throw new Error('endereço local');
+  const addrs = net0.isIP(host) ? [{ address: host }] : await dns.promises.lookup(host, { all: true });
+  if (!addrs.length || addrs.some((x) => privateIp(x.address))) throw new Error('endereço da rede local');
+  return url.toString();
+}
+// segue redirecionamentos na mão, conferindo cada destino
+async function safeFetch(u, headers, ms) {
   const ac = new AbortController(); const t = setTimeout(() => ac.abort(), ms);
   try {
-    const r = await net.fetch(url, { headers: { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8', Accept: 'text/html,*/*;q=0.8' }, signal: ac.signal, redirect: 'follow' });
+    let cur = u;
+    for (let hop = 0; hop < 5; hop++) {
+      cur = await checkUrl(cur);
+      const r = await net.fetch(cur, { headers, signal: ac.signal, redirect: 'manual', bypassCustomProtocolHandlers: true });
+      if (r.status >= 300 && r.status < 400 && r.headers.get('location')) { cur = new URL(r.headers.get('location'), cur).toString(); continue; }
+      return { r, finalUrl: cur, ac, t };
+    }
+    throw new Error('redirecionamentos demais');
+  } catch (e) { clearTimeout(t); throw e; }
+}
+
+async function fetchText(url, ms) {
+  const { r, finalUrl, t } = await safeFetch(url, { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8', Accept: 'text/html,*/*;q=0.8' }, ms);
+  try {
     if (!r.ok || !/html|xml/i.test(r.headers.get('content-type') || 'text/html')) return null;
     const reader = r.body.getReader(); const parts = []; let n = 0;
     for (;;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); n += value.length; if (n > MAX) { try { await reader.cancel(); } catch {} break; } }
-    return { html: Buffer.concat(parts.map((p) => Buffer.from(p))).toString('utf8'), finalUrl: r.url || url };
+    return { html: Buffer.concat(parts.map((p) => Buffer.from(p))).toString('utf8'), finalUrl };
   } finally { clearTimeout(t); }
 }
 async function fetchThumb(url, ms) {
-  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), ms);
+  let t;
   try {
-    const r = await net.fetch(url, { headers: { 'User-Agent': UA }, signal: ac.signal });
-    if (!r.ok) return '';
+    const f = await safeFetch(url, { 'User-Agent': UA }, ms); t = f.t; const r = f.r;
+    if (!r.ok || !/^image\//i.test(r.headers.get('content-type') || '')) return '';
     const b = Buffer.from(await r.arrayBuffer());
     if (b.length > 5 * 1024 * 1024) return '';
     let img = nativeImage.createFromBuffer(b);
@@ -78,7 +114,7 @@ export async function linkPreview(url, { timeout = 6000, thumb = true } = {}) {
         const desc = meta(h, ['og:description', 'twitter:description', 'description']);
         const site = meta(h, ['og:site_name']) || new URL(r.finalUrl).hostname.replace(/^www\./, '');
         let image = meta(h, ['og:image', 'og:image:url', 'twitter:image']);
-        if (image) { try { image = new URL(image, r.finalUrl).toString(); } catch { image = ''; } }
+        if (image) { try { image = new URL(image, r.finalUrl).toString(); if (!/^https?:/i.test(image)) image = ''; } catch { image = ''; } }
         if (title) v = { url, title: title.slice(0, 200), desc: desc.slice(0, 300), site, thumb: thumb && image ? await fetchThumb(image, 5000) : '' };
       }
     } catch {}

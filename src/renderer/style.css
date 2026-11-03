@@ -324,3 +324,14 @@ body.child-max .mdiwin.max:not(.active) { visibility: hidden; content-visibility
 .stkpop .sfoot .btn { font: var(--ui); padding: 1px 8px; }
 .stkpop .snote { font-weight: normal; color: #806000; background: #fff8d8; border: 1px solid #e0d090; padding: 3px 5px; margin: 0 2px 4px; }
 .stkpop .snote { position: relative; padding-right: 22px; } .stkpop .snote-x { position: absolute; right: 2px; top: 2px; border: 0; background: none; cursor: pointer; color: #806000; font: var(--ui); padding: 0 3px; } .stkpop .snote-x:hover { color: #000; }
+.lprev.ask, .lprev.loading, .lprev.none { display: inline-block; background: none; border-left: 0; padding: 0; margin: 1px 0 2px; color: #808080; font-size: .9em; cursor: pointer; text-decoration: underline dotted; }
+.lprev.loading, .lprev.none { cursor: default; text-decoration: none; }
+/* escolha de grupos (Auto-Join) */
+.gp-list { height: 220px; overflow-y: auto; border: 1px solid #7f9db9; background: #fff; padding: 2px 4px; }
+.dlg label.gp-it { margin: 0; padding: 1px 0; gap: 5px; white-space: nowrap; }
+.gp-it span { overflow: hidden; text-overflow: ellipsis; }
+.gp-n { color: #808080; }
+.gp-bar { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.gp-bar .btn { padding: 1px 8px; }
+.gp-cnt { margin-left: auto; color: #606060; }
+.dlg label > span { flex: 1; }

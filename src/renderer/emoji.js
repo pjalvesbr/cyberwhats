@@ -33,7 +33,7 @@ const fold = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 let pop = null;
 function close() { if (pop) { pop.remove(); pop = null; } }
-function open(input, anchor) {
+function open(input, anchor, onPick) {
   if (pop) { close(); return; }
   const el = pop = document.createElement('div');
   el.className = 'emojipop';
@@ -58,6 +58,7 @@ function open(input, anchor) {
     show([...out], `Busca: ${search.value.trim()}`);
   });
   const insert = (e, keep) => {
+    if (onPick) { pushRecent(e); close(); onPick(e); return; } // modo "escolher" (ex.: reagir a uma mensagem)
     const s = input.selectionStart ?? input.value.length, en = input.selectionEnd ?? s;
     input.setRangeText(e, s, en, 'end');
     input.dispatchEvent(new Event('input', { bubbles: true }));

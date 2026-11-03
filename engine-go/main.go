@@ -809,6 +809,20 @@ func handle(r req) (any, error) {
 		return send(a)
 	case "sendFile":
 		return sendFile(a)
+	case "react":
+		chat, err := parseJID(str(a, "chat"))
+		if err != nil {
+			return nil, err
+		}
+		fm, _ := a["fromMe"].(bool)
+		var sender types.JID
+		if fm {
+			sender = cli.Store.GetJID().ToNonAD()
+		} else if sender, err = types.ParseJID(str(a, "sender")); err != nil || sender.IsEmpty() {
+			sender = chat
+		}
+		_, err = cli.SendMessage(ctx, chat, cli.BuildReaction(chat, sender, str(a, "id"), str(a, "emoji")))
+		return nil, err
 	case "favStickers":
 		// busca de novo (sincronização completa) as listas onde o WhatsApp guarda as favoritas
 		cli.EmitAppStateEventsOnFullSync = true

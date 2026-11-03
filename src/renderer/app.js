@@ -92,7 +92,10 @@ function play(k) {
 }
 
 // ---------------- nicks ----------------
-const cleanNick = (n) => (n || '?').trim().replace(/\s+/g, '_').replace(/[,]/g, '');
+// nomes "invisíveis" (ㅤ, caracteres de largura zero...) que muita gente usa no perfil
+const INVIS = /[\s\u00ad\u034f\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\u2800\u3164\ufeff\uffa0]/g;
+const visible = (n) => /[\p{L}\p{N}\p{So}]/u.test(String(n || '').replace(INVIS, ''));
+const cleanNick = (n) => { const t = String(n || '').replace(/[\u00ad\u034f\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\u2800\u3164\ufeff\uffa0]/g, '').trim(); return (t || '?').replace(/\s+/g, '_').replace(/[,]/g, ''); };
 const chanName = (subject) => '#' + (subject || 'grupo').trim().replace(/\s+/g, '_');
 // apelidos locais (só no CyberWhats, não mudam nada no WhatsApp) — cfg.aliases { jid: apelido }
 const alias = (jid) => (jid && S.cfg.aliases ? S.cfg.aliases[jid] : '') || '';
@@ -143,7 +146,7 @@ class Win {
     for (const d of ['e', 's', 'se']) { const r = h('div', { class: 'rs ' + d }); r.addEventListener('mousedown', (e) => startResize(e, this, d)); el.appendChild(r); }
     this.title.addEventListener('mousedown', (e) => startMove(e, this));
     // clicar no texto/nicklist não pode roubar o foco (senão a seleção some no meio do arrasto)
-    el.addEventListener('mousedown', (e) => activate(this.id, !!e.target.closest('.buffer, .nicklist, .listview, .wbtns')));
+    el.addEventListener('mousedown', (e) => { activate(this.id, !!e.target.closest('.buffer, .nicklist, .listview, .wbtns')); if (this.unread) { this.unread = 0; updateUnread(); } });
     const n = S.order.length;
     Object.assign(el.style, { left: 20 * (n % 8) + 'px', top: 20 * (n % 8) + 'px', width: '70%', height: '70%' });
     $('#mdi').appendChild(el);
@@ -157,8 +160,11 @@ class Win {
     });
     this.sw.addEventListener('contextmenu', (e) => { e.preventDefault(); activate(this.id); popup(e, this.windowMenu()); });
     // Contatos Recentes fica sempre logo depois do Status na switchbar
-    const stSw = S.wins.get('status')?.sw;
-    if (id === 'recent' && stSw) stSw.after(this.sw); else $('#switchbar').appendChild(this.sw);
+    // Status, Contatos Recentes e Lista de Canais ficam sempre fixos à esquerda, nessa ordem
+    const pi = PINNED.indexOf(id);
+    if (pi > 0) { const prev = PINNED.slice(0, pi).reverse().map((x) => S.wins.get(x)?.sw).find(Boolean); if (prev) prev.after(this.sw); else $('#switchbar').prepend(this.sw); }
+    else if (pi === 0) $('#switchbar').prepend(this.sw);
+    else $('#switchbar').appendChild(this.sw);
     if (S.maxed) el.classList.add('max');
     this.setTitle(name);
   }
@@ -222,6 +228,11 @@ class Win {
       e.preventDefault();
       const ln = e.target.closest('.ln');
       const extra = ln?.dataset.id && this.jid ? [['Responder esta mensagem (citar)', () => this.quoteLine(ln)], ['Copiar linha', () => copyText(ln.textContent)], '-'] : [];
+      if (ln?.dataset.id && this.jid) {
+        const mine = ln._reacts?.get(myNick());
+        const quick = ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((em) => [em + (mine === em ? '  (sua)' : ''), () => reactTo(this, ln, mine === em ? '' : em)]);
+        extra.unshift(['Reagir', null, false, { children: [...quick, '-', ['Outro emoji...', () => window.EmojiPicker.open(this.edit, this.edit, (em) => reactTo(this, ln, em))], ['Tirar minha reação', () => reactTo(this, ln, ''), !mine]] }]);
+      }
       const stk = ln?.querySelector('.inmedia.sticker');
       if (stk) extra.unshift(['Guardar figurinha em "Minhas"', () => api('st:addMine', { kind: 'recv', chat: stk.dataset.chat, id: stk.dataset.id }).then(() => this.add(T.info('Figurinha guardada em Minhas (botão de figurinhas ao lado da caixa de texto).'))).catch((er) => this.add(T.err(friendlyError(er, 'guardar a figurinha')))) ], '-');
       const type = this.type === 'channel' ? 'channel' : this.type === 'query' ? 'query' : 'status';
@@ -340,6 +351,7 @@ class Win {
   bufClick(e) {
     if (e.target.closest('video, audio')) return;
     const po = e.target.closest('.poll .popt'); if (po) { pollClick(po); return; }
+    const ask = e.target.closest('.lprev.ask'); if (ask) { ask.classList.remove('ask'); ask.classList.add('pending', 'loading'); ask.textContent = 'buscando prévia...'; queueLinkPrev(ask); return; }
     const lp = e.target.closest('.lprev[data-url]'); if (lp && lp.dataset.url && !lp.classList.contains('pending')) { api('app:openUrl', lp.dataset.url); return; }
     // áudio ainda não carregado: clique carrega e toca
     const au = e.target.closest('.inmedia.audio');
@@ -426,7 +438,21 @@ class Win {
     // Tab de novo logo depois de completar: passa para o próximo nick da lista
     const cycling = !!(this._tab && this._tab.end === pos && ed.value.slice(this._tab.start, pos) === this._tab.inserted);
     if (cycling) this._tab.i = (this._tab.i + 1) % this._tab.list.length;
-    else {
+    else if (/^\/{1,2}[^\s]*$/.test(ed.value.slice(0, pos))) {
+      // começo de comando: /not + Tab -> /notify (se houver vários, completa o que der e mostra a lista)
+      const typed = ed.value.slice(0, pos), slash = typed.startsWith('//') ? '//' : '/', f = typed.slice(slash.length).toLowerCase();
+      const list = allCommands().filter((c) => c.startsWith(f));
+      if (!list.length) return;
+      if (list.length > 1) {
+        let cp = list[0]; for (const c of list) while (!c.startsWith(cp)) cp = cp.slice(0, -1);
+        const ins = slash + cp, after = ed.value.slice(pos);
+        ed.value = ins + after; ed.setSelectionRange(ins.length, ins.length);
+        this.add(`${C}14Comandos: ${list.map((c) => slash + c).join('  ')}${C}14  (Tab de novo alterna)`, { nots: true });
+        this._tab = { start: 0, list: list.map((c) => c.slice(0)), i: -1, pre: slash, cmd: true, inserted: ins, end: ins.length };
+        return;
+      }
+      this._tab = { start: 0, list, i: 0, pre: slash, cmd: true };
+    } else {
       const m = /(\S+)$/.exec(ed.value.slice(0, pos)); if (!m) return;
       let frag = m[1], pre = '';
       if (frag.startsWith('@')) { pre = '@'; frag = frag.slice(1); } // @nick = menção
@@ -438,17 +464,19 @@ class Win {
       this._tab = { start: pos - m[1].length, list, i: 0, pre, first: pos - m[1].length === 0 };
     }
     const t = this._tab, pick = t.list[t.i];
-    const suffix = t.first && !t.pre && this.type === 'channel' && !pick.startsWith('#') ? ': ' : ' ';
+    const suffix = t.cmd ? ' ' : t.first && !t.pre && this.type === 'channel' && !pick.startsWith('#') ? ': ' : ' ';
     const after = ed.value.slice(pos);
     t.inserted = t.pre + pick + suffix;
     ed.value = ed.value.slice(0, t.start) + t.inserted + after;
     t.end = t.start + t.inserted.length; ed.setSelectionRange(t.end, t.end);
+    if (t.cmd) return;
     // nick completado com Tab vira menção no WhatsApp quando a mensagem for enviada
     const who = this.type === 'channel' && this.nicks.find((n) => n.nick === pick);
     if (who && who.id) (this._compl = this._compl || new Map()).set(pick, who.id);
   }
   onTyping() {
     this._tab = null;
+    if (this.unread) { this.unread = 0; updateUnread(); }
     S.lastInput = Date.now();
     if (!this.jid || S.conn !== 'online' || this.edit.value.startsWith('/')) return;
     const now = Date.now();
@@ -469,7 +497,7 @@ class Win {
     const rank = (a) => (a === 'superadmin' ? 0 : a === 'admin' ? 1 : 2);
     const seen = new Map();
     this.nicks = group.participants.map((p) => {
-      let nick = p.me ? myNick() : nickFor(p.id, p.nick);
+      let nick = p.me ? myNick() : nickFor(p.id, visible(p.nick) ? p.nick : ((S.contacts || []).find((x) => x.id === p.id)?.nick || '+' + num(p.id)));
       if (seen.has(nick.toLowerCase())) nick += '|' + num(p.id).slice(-4);
       seen.set(nick.toLowerCase(), 1);
       indexNick(nick, p.id);
@@ -631,11 +659,13 @@ function wordAt(e) {
   while (b < t.length && !/\s/.test(t[b])) b++;
   return t.slice(a, b).replace(/^[("'«\[]+|[)"'»\],.:;!?]+$/g, '');
 }
+const PINNED = ['status', 'recent', 'list'];
 function makeWin(id, type, name, opts) {
   if (S.wins.has(id)) return S.wins.get(id);
   const w = new Win(id, type, name, opts);
   S.wins.set(id, w);
-  if (id === 'recent' && S.order[0] === 'status') S.order.splice(1, 0, id); else S.order.push(id);
+  const pi = PINNED.indexOf(id);
+  if (pi >= 0) { let at = 0; while (at < S.order.length && PINNED.indexOf(S.order[at]) >= 0 && PINNED.indexOf(S.order[at]) < pi) at++; S.order.splice(at, 0, id); } else S.order.push(id);
   return w;
 }
 // ---------------- não lidas: bandeja e barra de tarefas ----------------
@@ -661,6 +691,14 @@ function updateUnread() {
 }
 const appImg = new Image(); appImg.src = 'assets/app.png';
 function clearUnread(w) { if (w && w.unread && document.hasFocus()) { w.unread = 0; updateUnread(); } }
+// tudo que está à vista conta como lido (janela ativa e, fora do modo maximizado, as que aparecem na tela)
+function clearVisibleUnread() {
+  if (!document.hasFocus()) return;
+  let ch = false;
+  for (const w of S.wins.values()) if (w.unread && (w.id === S.active || (!S.maxed && !w.el.classList.contains('min')))) { w.unread = 0; ch = true; }
+  if (ch) updateUnread();
+}
+function clearAllUnread() { for (const w of S.wins.values()) w.unread = 0; unreadLast = -1; updateUnread(); }
 function activate(id, noFocus = false) {
   const w = S.wins.get(id); if (!w) return;
   if (S.active && S.active !== id) {
@@ -675,7 +713,9 @@ function activate(id, noFocus = false) {
   w.activity = null; w.sw.classList.remove('act-msg', 'act-event', 'act-hl');
   if (S.maxed) w.el.classList.add('max');
   // tem mensagens novas: abre mostrando a linha "mensagens novas" no topo (como o WhatsApp)
-  if (w.buf && w._newMark && !w._newMark._shown) requestAnimationFrame(() => { w._newMark._shown = true; w.buf.scrollTop += w._newMark.getBoundingClientRect().top - w.buf.getBoundingClientRect().top - 2; w.atBottom = w.buf.scrollTop + w.buf.clientHeight >= w.buf.scrollHeight - 20; });
+  // canais: abrem sempre no fim (a linha "mensagens novas" mostra onde parou); pvts abrem na linha
+  if (w.buf && w.type === 'channel' && !w._shownOnce) { w._shownOnce = true; if (w._newMark) w._newMark._shown = true; requestAnimationFrame(() => pinBottom(w)); }
+  else if (w.buf && w._newMark && !w._newMark._shown) requestAnimationFrame(() => { w._newMark._shown = true; w.buf.scrollTop += w._newMark.getBoundingClientRect().top - w.buf.getBoundingClientRect().top - 2; w.atBottom = w.buf.scrollTop + w.buf.clientHeight >= w.buf.scrollHeight - 20; });
   else if (w.buf && w.atBottom !== false) requestAnimationFrame(() => { w.buf.scrollTop = w.buf.scrollHeight; });
   updateAppTitle();
   if (w.jid && S.conn === 'online') {
@@ -1005,7 +1045,7 @@ function dlgOptions() {
   const chk = (k, l) => `<label><input type="checkbox" data-k="${k}" ${c[k] ? 'checked' : ''}> ${l}</label>`;
   dialog({
     title: 'Opções do CyberWhats - /opcoes', width: 420,
-    body: `<fieldset><legend>Geral</legend>${chk('timestamp', 'Mostrar timestamp [HH:nn:ss]')}${chk('sounds', 'Sons do CyberScript (pvt, join, conectar...)')}${chk('notifyPopups', 'Balões de aviso do Windows')}${chk('autojoinAll', 'Auto-join: entrar em todos os meus grupos ao conectar')}${chk('showMotd', 'Mostrar LUSERS e MOTD ao conectar (/motd editar para personalizar)')}${chk('showRecent', 'Mostrar os contatos recentes ao conectar (/recentes)')}</fieldset>
+    body: `<fieldset><legend>Geral</legend>${chk('timestamp', 'Mostrar timestamp [HH:nn:ss]')}${chk('sounds', 'Sons do CyberScript (pvt, join, conectar...)')}${chk('notifyPopups', 'Balões de aviso do Windows')}${chk('autojoinAll', 'Auto-join: entrar em todos os meus grupos ao conectar')}${chk('showMotd', 'Mostrar LUSERS e MOTD ao conectar (/motd editar para personalizar)')}${chk('showRecent', 'Mostrar os contatos recentes ao conectar (/recentes)')}${chk('showList', 'Abrir a Lista de Canais ao conectar (/list)')}${chk('publicIp', 'Mostrar o IP público na barra de status (consulta um serviço externo)')}</fieldset>
       <fieldset><legend>Mídia</legend>${chk('inlineMedia', 'Mostrar fotos, figurinhas e vídeos no chat')}${chk('linkPreviews', 'Prévia de links (título do YouTube, Instagram...)')}${chk('autoDownload', 'Baixar automaticamente fotos, figurinhas, áudios e vídeos')}<div class="drow">Vídeos até <input type="text" data-k="videoMaxMB" style="width:40px" value="${esc(String(c.videoMaxMB || 25))}"> MB (maiores: clique para abrir)</div></fieldset>
       <fieldset><legend>Privacidade</legend>${chk('readReceipts', 'Enviar confirmação de leitura (tique azul)')}${chk('typing', 'Mostrar "digitando..." para os outros')}</fieldset>
       <fieldset><legend>Motor de conexão (precisa reiniciar)</legend><label><input type="radio" name="eng" value="go" ${c.engine !== 'web' ? 'checked' : ''}> whatsmeow — conexão direta (recomendado)</label><label><input type="radio" name="eng" value="web" ${c.engine === 'web' ? 'checked' : ''}> WhatsApp Web escondido (modo antigo)</label></fieldset>
@@ -1020,19 +1060,36 @@ function dlgOptions() {
     }], ['Cancelar', null]]
   });
 }
-function listEditor(title, key, help) {
-  const items = [...(S.cfg[key] || [])];
+// Notify / Ignore: todos os contatos com caixinha (marcados = na lista), filtro e "outro número"
+async function listEditor(title, key, help) {
+  if (!(S.contacts && S.contacts.length) && S.conn === 'online') { try { S.contacts = await api('wa:contacts'); for (const c of S.contacts) indexNick(c.nick, c.id); } catch {} }
+  const chosen = new Set(S.cfg[key] || []);
+  const isNum = (x) => !x || /^\+?[\d\s()-]+$/.test(String(x));
+  const nameOf = (c) => alias(c.id) || [c.nick, c.name, c.push].find((x) => visible(x) && !isNum(x)) || '';
+  const map = new Map();
+  for (const c of S.contacts || []) if (/@s\.whatsapp\.net$/.test(c.id)) map.set(c.id, nameOf(c));
+  for (const j of chosen) if (!map.has(j)) map.set(j, (labelFor(j) || '').replace(/\s*\(\+\d+\)$/, ''));
+  const rows = [...map].map(([id, name]) => ({ id, name: name && !/^\+?\d+$/.test(name) ? name : '' }))
+    .sort((x, y) => (chosen.has(y.id) - chosen.has(x.id)) || (!x.name - !y.name) || x.name.localeCompare(y.name, 'pt-BR', { sensitivity: 'base' }) || x.id.localeCompare(y.id));
   const body = h('div');
-  body.innerHTML = `<div>${esc(help)}</div><div class="drow"><select size="8" style="flex:1;height:130px"></select><div style="display:flex;flex-direction:column;gap:4px"><button class="btn" data-a="add">Adicionar</button><button class="btn" data-a="del">Remover</button></div></div>`;
-  const sel = $('select', body);
-  const render = () => { sel.innerHTML = items.map((j, i) => `<option value="${i}">${esc(labelFor(j))}</option>`).join(''); };
-  render();
-  body.addEventListener('click', async (e) => {
-    const a = e.target.dataset.a;
-    if (a === 'add') { const v = await ask(title, 'Nick ou número:'); if (v) { const j = await resolveTarget(v); if (j) { items.push(j); render(); } } }
-    if (a === 'del' && sel.value !== '') { items.splice(+sel.value, 1); render(); }
+  const item = (r) => `<label class="gp-it"><input type="checkbox" value="${esc(r.id)}" ${chosen.has(r.id) ? 'checked' : ''}><span>${r.name ? esc(cleanNick(r.name)) + ' ' : ''}<span class="gp-n">+${esc(num(r.id))}</span></span></label>`;
+  body.innerHTML = `<div>${esc(help)}</div><div class="drow"><input type="text" class="gp-q" placeholder="filtrar por nome ou número..." style="flex:1"></div>
+    <div class="gp-list">${rows.length ? rows.map(item).join('') : '<div class="gp-n" style="padding:4px">Nenhum contato carregado ainda (conecte para ver a lista).</div>'}</div>
+    <div class="gp-bar"><button class="btn gp-add" type="button">Outro número...</button><button class="btn gp-alloff" type="button">Desmarcar todos</button><span class="gp-cnt"></span></div>`;
+  const list = $('.gp-list', body);
+  const count = () => { $('.gp-cnt', body).textContent = `${list.querySelectorAll('input:checked').length} marcado(s)`; };
+  count();
+  body.addEventListener('change', count);
+  $('.gp-q', body).addEventListener('input', (e) => { const q = e.target.value.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ''); list.querySelectorAll('.gp-it').forEach((o) => (o.hidden = q && !o.textContent.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').includes(q))); });
+  $('.gp-alloff', body).addEventListener('click', () => { list.querySelectorAll('.gp-it:not([hidden]) input').forEach((i) => (i.checked = false)); count(); });
+  $('.gp-add', body).addEventListener('click', async () => {
+    const v = await ask(title, 'Nick ou número (com DDD):'); if (!v) return;
+    const j = await resolveTarget(v); if (!j) return;
+    let box = list.querySelector(`input[value="${CSS.escape(j)}"]`);
+    if (!box) { list.insertAdjacentHTML('afterbegin', item({ id: j, name: (labelFor(j) || '').replace(/\s*\(\+\d+\)$/, '').replace(/^\+\d+$/, '') })); box = list.querySelector(`input[value="${CSS.escape(j)}"]`); }
+    box.checked = true; box.closest('.gp-it').hidden = false; box.scrollIntoView({ block: 'nearest' }); count();
   });
-  dialog({ title, body, width: 380, buttons: [['OK', () => setCfg({ [key]: items }).then(() => key === 'notify' && subscribeNotify())], ['Cancelar', null]] });
+  dialog({ title, body, width: 420, buttons: [['OK', (d) => { const ids = [...$('.gp-list', d).querySelectorAll('input:checked')].map((i) => i.value); setCfg({ [key]: ids }).then(() => key === 'notify' && subscribeNotify()); }], ['Cancelar', null]] });
 }
 function labelFor(jid) {
   const c = S.chats.find((x) => x.id === jid);
@@ -1045,15 +1102,29 @@ const dlgIgnore = () => listEditor('Ignore List', 'ignore', 'Ignorar mensagens d
 function groupPicker(title, help, selected, multi, onOk, extra = '') {
   const groups = S.chats.filter((c) => c.group).sort((a, b) => a.name.localeCompare(b.name));
   const body = h('div');
-  body.innerHTML = `<div>${esc(help)}</div><div class="drow"><input type="text" placeholder="filtrar..." style="flex:1"></div><select ${multi ? 'multiple' : ''} size="12" style="width:100%;height:220px">${groups.map((g) => `<option value="${g.id}" ${selected.includes(g.id) ? 'selected' : ''}>${esc(chanOf(g.id, g.name))}  [${g.size || '?'}]</option>`).join('')}</select>${extra ? '<div style="margin-top:6px">' + extra + '</div>' : ''}`;
-  $('input', body).addEventListener('input', (e) => { const q = e.target.value.toLowerCase(); body.querySelectorAll('option').forEach((o) => (o.hidden = !o.textContent.toLowerCase().includes(q))); });
-  $('select', body).addEventListener('dblclick', () => { if (!multi) body.closest('.dlg').querySelector('.btn').click(); });
-  return dialog({ title, body, width: 400, buttons: [['OK', (d) => onOk([...$('select', d).selectedOptions].map((o) => o.value), d)], ['Cancelar', null]] });
+  const label = (g) => `${esc(chanOf(g.id, g.name))} <span class="gp-n">[${g.size || '?'}]</span>`;
+  // vários: lista com caixinhas (dá para desmarcar tudo); um só: lista simples com duplo-clique
+  const list = multi
+    ? `<div class="gp-list">${groups.map((g) => `<label class="gp-it"><input type="checkbox" value="${esc(g.id)}" ${selected.includes(g.id) ? 'checked' : ''}><span>${label(g)}</span></label>`).join('')}</div>
+       <div class="gp-bar"><button class="btn gp-allon" type="button">Marcar todos</button><button class="btn gp-alloff" type="button">Desmarcar todos</button><span class="gp-cnt"></span></div>`
+    : `<select size="12" style="width:100%;height:220px">${groups.map((g) => `<option value="${esc(g.id)}">${esc(chanOf(g.id, g.name))}  [${g.size || '?'}]</option>`).join('')}</select>`;
+  body.innerHTML = `<div>${esc(help)}</div><div class="drow"><input type="text" class="gp-q" placeholder="filtrar..." style="flex:1"></div>${list}${extra ? '<div style="margin-top:6px">' + extra + '</div>' : ''}`;
+  const items = () => [...body.querySelectorAll(multi ? '.gp-it' : 'option')];
+  const count = () => { if (multi) $('.gp-cnt', body).textContent = `${body.querySelectorAll('.gp-it input:checked').length} marcado(s)`; };
+  $('.gp-q', body).addEventListener('input', (e) => { const q = e.target.value.toLowerCase(); items().forEach((o) => (o.hidden = !o.textContent.toLowerCase().includes(q))); });
+  if (multi) {
+    body.addEventListener('change', count);
+    $('.gp-allon', body).addEventListener('click', () => { items().filter((x) => !x.hidden).forEach((x) => (x.querySelector('input').checked = true)); count(); });
+    $('.gp-alloff', body).addEventListener('click', () => { items().filter((x) => !x.hidden).forEach((x) => (x.querySelector('input').checked = false)); count(); });
+    count();
+  } else $('select', body).addEventListener('dblclick', () => body.closest('.dlg').querySelector('.btn').click());
+  const picked = (d) => (multi ? [...d.querySelectorAll('.gp-it input:checked')].map((i) => i.value) : [...$('select', d).selectedOptions].map((o) => o.value));
+  return dialog({ title, body, width: 420, buttons: [['OK', (d) => onOk(picked(d), d)], ['Cancelar', null]] });
 }
 const dlgFavorites = () => groupPicker('Pasta de Canais', 'Escolha um grupo para entrar (duplo-clique):', [], false, (ids) => ids[0] && openChannel(ids[0], true));
-const dlgAutojoin = () => groupPicker('Auto-Join', 'Grupos abertos automaticamente ao conectar (Ctrl+clique para vários):', S.cfg.autojoin || [], true,
+const dlgAutojoin = () => groupPicker('Auto-Join', 'Grupos abertos automaticamente ao conectar:', S.cfg.autojoin || [], true,
   (ids, d) => { const all = $('#aj-all', d).checked; setCfg({ autojoin: ids, autojoinAll: all }); if ($('#aj-now', d).checked && S.conn === 'online') autoJoin(all ? true : undefined); },
-  `<label><input type="checkbox" id="aj-all" ${S.cfg.autojoinAll ? 'checked' : ''}> Entrar automaticamente em <b>TODOS</b> os meus grupos ao conectar</label><label><input type="checkbox" id="aj-now"> Entrar agora</label>`);
+  `<label><input type="checkbox" id="aj-all" ${S.cfg.autojoinAll ? 'checked' : ''}><span>Entrar automaticamente em <b>todos</b> os meus grupos ao conectar</span></label><label><input type="checkbox" id="aj-now"><span>Entrar agora</span></label>`);
 function dlgTheme() {
   const BUILTIN = [['classico', 'Clássico (branco)', 'Fundo branco também na lista de nicks.'], ['dark', 'Dark', 'Fundo preto, cores claras.']];
   const cur0 = themeKey();
@@ -1226,7 +1297,12 @@ async function openQuery(jid, nick, focus) {
   let w = getWin(jid);
   if (w && w._ready) await w._ready;
   if (!w) {
-    const name = nickFor(jid, nick || labelFor(jid));
+    // primeiro nome que dá para ler: o que veio, agenda/perfil, nick nos canais, nome do chat; senão o número
+    const fromGroups = (() => { for (const g of S.groups.values()) { const p = g.participants?.find((x) => x.id === jid); if (p && visible(p.nick)) return p.nick; } return ''; })();
+    const ct = (S.contacts || []).find((x) => x.id === jid);
+    const idx = (() => { for (const [n, j] of S.nickIdx) if (j === jid && visible(n)) return n; return ''; })();
+    const chatName = S.chats.find((x) => x.id === jid)?.name;
+    const name = nickFor(jid, [nick, ct?.nick, ct?.name, ct?.push, fromGroups, idx, chatName].find(visible) || '+' + num(jid));
     indexNick(name, jid);
     w = makeWin(jid, 'query', name, { jid });
     let done; w._ready = new Promise((r) => (done = r));
@@ -1305,6 +1381,13 @@ function setReaction(ln, who, emoji) {
   sp.textContent = top + (ln._reacts.size > 1 ? ' ' + ln._reacts.size : '');
   sp.title = [...ln._reacts].map(([n, e]) => `${n}: ${e}`).join('\n');
 }
+// reagir a uma mensagem (botão direito na linha > Reagir, ou /reagir)
+async function reactTo(w, ln, emoji) {
+  const id = ln.dataset.id;
+  const lns = w.buf.querySelectorAll(`.ln[data-id="${CSS.escape(id)}"]`); const last = lns[lns.length - 1] || ln;
+  try { await api('wa:react', w.jid, id, emoji); setReaction(last, myNick(), emoji); }
+  catch (e) { w.add(T.err(friendlyError(e, 'reagir à mensagem'))); }
+}
 // ---- mensagens de erro: traduz os códigos do WhatsApp para algo legível e guarda o original no log
 const ACTION_OF = { topic: 'mudar o tópico', t: 'mudar o tópico', assunto: 'renomear o grupo', subject: 'renomear o grupo', rename: 'renomear o grupo',
   op: 'dar admin', deop: 'tirar admin', kick: 'remover alguém do grupo', k: 'remover alguém do grupo', invite: 'adicionar alguém ao grupo', add: 'adicionar alguém ao grupo',
@@ -1355,7 +1438,7 @@ function senderNick(w, m) {
   if (m.fromMe) return myNick();
   if (w.type === 'channel') { const n = w.nickOf(m.sender); if (n) return n.nick; }
   if (w.type === 'query') return w.name;
-  return nickFor(m.sender, m.nick);
+  return nickFor(m.sender, visible(m.nick) ? m.nick : '+' + num(m.sender));
 }
 function renderMsg(w, m, hist = false) {
   const nick = senderNick(w, m);
@@ -1379,7 +1462,11 @@ function renderMsg(w, m, hist = false) {
   if (m.edited) html += ' <span style="color:#808080">(editada)</span>';
   if ((m.kind === 'text' || m.kind === 'action') && S.cfg.linkPreviews !== false) {
     if (m.link?.title) html += linkPrevHtml(m.link);
-    else { const u = (/https?:\/\/[^\s<>"]+/i.exec(m.text || '') || [])[0]; if (u) html += `<div class="lprev pending" data-url="${esc(u.replace(/[).,;!?]+$/, ''))}"></div>`; }
+    else {
+      const u = (/https?:\/\/[^\s<>"]+/i.exec(m.text || '') || [])[0];
+      // link recebido: só busca a prévia se você pedir (buscar sozinho entregaria seu IP para quem mandou o link)
+      if (u) html += m.fromMe ? `<div class="lprev pending" data-url="${esc(u.replace(/[).,;!?]+$/, ''))}"></div>` : `<div class="lprev ask" data-url="${esc(u.replace(/[).,;!?]+$/, ''))}" title="Buscar a prévia do link">▸ ver prévia do link</div>`;
+    }
   }
   const lines = text.split('\n');
   // tamanho visível do "<nick> " para alinhar as linhas seguintes com o começo do texto
@@ -1427,6 +1514,7 @@ function onWa(ev) {
         setTimeout(autoJoin, 2500);
         setTimeout(subscribeNotify, 4000);
         if (S.cfg.showRecent !== false && !S.recentShown) { S.recentShown = true; setTimeout(() => cmdRecent(30, true), 6500); }
+        if (S.cfg.showList && !S.listShown) { S.listShown = true; setTimeout(async () => { const keep = S.active; await cmdList(''); if (S.wins.has(keep)) activate(keep); }, 7500); }
         if (S.cfg.showMotd !== false && !S.motdShown) { S.motdShown = true; setTimeout(async () => { await showLusers(); await showMotd(); }, 3500); }
         setTimeout(() => { for (const x of S.wins.values()) if (x.type === 'query') { x._photoLoaded = false; loadPhoto(x); } }, 3500);
         setTimeout(() => api('wa:contacts').then((l) => { S.contacts = l; for (const c of l) indexNick(c.nick, c.id); }).catch(() => {}), 3000);
@@ -1645,16 +1733,23 @@ async function resolveTarget(q) {
   if (q.startsWith('#')) return findChan(q);
   return findNick(q) || findChan(q);
 }
+// todos os comandos (da ajuda, atalhos e aliases dos scripts) para o Tab completar
+function allCommands() {
+  const set = new Set(['j', 'q', 'm', 'w', 'k', 't', 's', 'users', 'who', 'back', 'unnotify', 'unignore', 'deop', 'logout', 'fonte', 'recebidos', 'cascade', 'tile', 'disconnect', 'help', 'ajuda', 'sobre', 'quit', 'localizar']);
+  for (const [c] of HELP) for (const mm of String(c).matchAll(/\/([a-z][\w]*)/gi)) set.add(mm[1].toLowerCase());
+  for (const a of Object.keys(SC.aliases || {})) set.add(a.toLowerCase());
+  return [...set].sort();
+}
 const HELP = [
   ['/msg <nick|número> <texto>', 'envia mensagem privada'], ['/query <nick|número>', 'abre um pvt'], ['/join #grupo', 'abre a janela de um grupo (canal)'],
   ['/part', 'fecha a janela atual'], ['/sairgrupo', 'sai de verdade do grupo atual'], ['/me <ação>', 'envia uma ação (* nick ação)'],
-  ['/list [filtro]', 'lista seus grupos'], ['/contatos [filtro]', 'lista seus contatos (pvt com duplo-clique)'], ['/recentes [N] | on | off', 'contatos com quem você falou por último (on/off: abrir ao conectar)'], ['/autojoin on|off|agora', 'entra em todos os grupos ao conectar'], ['/names', 'lista os participantes do canal'], ['/whois [nick]', 'informações do contato'],
+  ['/list [filtro] | on | off', 'lista seus grupos (on/off: abrir ao conectar)'], ['/contatos [filtro]', 'lista seus contatos (pvt com duplo-clique)'], ['/recentes [N] | on | off', 'contatos com quem você falou por último (on/off: abrir ao conectar)'], ['/autojoin on|off|agora', 'entra em todos os grupos ao conectar'], ['/names', 'lista os participantes do canal'], ['/whois [nick]', 'informações do contato'],
   ['/topic [texto]', 'mostra ou muda a descrição do grupo'], ['/assunto <nome>', 'renomeia o grupo'], ['/op /deop <nick>', 'promove/rebaixa admin'],
   ['/kick <nick>', 'remove do grupo'], ['/invite <número>', 'adiciona ao grupo atual'], ['/convite', 'mostra o link de convite do grupo'],
   ['/nick <novo>', 'muda seu nome no WhatsApp'], ['/apelido <alvo> <apelido>', 'apelido local p/ contato, #canal ou "eu" (só no CyberWhats)'], ['/meunick <apelido>', 'seu apelido local'], ['/recado <texto>', 'muda seu recado (status)'], ['/away [msg] /back', 'marca/desmarca away'],
   ['/notify <nick>', 'avisa quando o contato ficar online (/unnotify desfaz)'], ['/ignore <nick>', 'ignora mensagens (/unignore desfaz)'], ['/enviar', 'envia arquivo (DCC Send) — ou arraste para a janela, ou cole uma imagem com Ctrl+V'], ['/gravar', 'grava uma mensagem de voz (de novo: envia; Esc cancela) — ou o botão do microfone'],
   ['/r <texto>', 'responde ao último pvt'], ['/server [número]', 'conecta (QR ou código)'], ['/disconnect /logout', 'desconecta / encerra a sessão'],
-  ['/web', 'mostra o WhatsApp Web original (só no motor antigo)'], ['/interface <px> /fonte <px>', 'tamanho da interface / do bate-papo'], ['/icones [moderno|classico]', 'alterna entre ícones modernos e clássicos'], ['/atualizar', 'procura uma versão nova do CyberWhats'], ['/figurinhas', 'abre suas figurinhas (favoritas do WhatsApp, recebidas e as suas) — Ctrl+Shift+Espaço'], ['/enquete Pergunta? | op1 | op2', 'cria uma enquete (-m: várias respostas); clique nas opções para votar'], ['/buscar <texto>', 'procura em todas as conversas (histórico e logs); Ctrl+F procura na janela'], ['/tema [nome] [scheme]', 'troca o tema (sem nome: lista os 22 temas do CyberScript)'], ['/clear', 'limpa a janela'], ['/log /recebidos', 'abre pastas'], ['/tile /cascade', 'organiza as janelas'], ['/dicas', 'dica do CyberScript'],
+  ['/web', 'mostra o WhatsApp Web original (só no motor antigo)'], ['/interface <px> /fonte <px>', 'tamanho da interface / do bate-papo'], ['/icones [moderno|classico]', 'alterna entre ícones modernos e clássicos'], ['/atualizar', 'procura uma versão nova do CyberWhats'], ['/reagir [emoji]', 'reage à última mensagem recebida (sem emoji abre a lista; - tira) — ou botão direito na linha > Reagir'], ['/figurinhas', 'abre suas figurinhas (favoritas do WhatsApp, recebidas e as suas) — Ctrl+Shift+Espaço'], ['/enquete Pergunta? | op1 | op2', 'cria uma enquete (-m: várias respostas); clique nas opções para votar'], ['/buscar <texto>', 'procura em todas as conversas (histórico e logs); Ctrl+F procura na janela'], ['/tema [nome] [scheme]', 'troca o tema (sem nome: lista os 22 temas do CyberScript)'], ['/clear', 'limpa a janela'], ['/log /recebidos', 'abre pastas'], ['/tile /cascade', 'organiza as janelas'], ['/dicas', 'dica do CyberScript'],
   ['/motd', 'mostra a mensagem do dia (MOTD)'], ['/lusers', 'estatísticas: canais, contatos, usuários'], ['/echo <texto>', 'escreve só na sua tela'], ['/say <texto>', 'envia texto (mesmo começando com /)'],
   ['/opcoes', 'abre as opções (Alt+O)'], ['/about', 'sobre o CyberWhats'], ['/atalhos', 'lista os atalhos de teclado'], ['/ajuda scripts', 'referência da linguagem CyberWhats Script'],
   ['/scripts [nome]', 'abre o editor de scripts (Alt+R)'], ['/recarregar', 'recarrega todos os scripts (.cws)'], ['//comando', 'executa avaliando $identificadores e %variáveis'],
@@ -1715,7 +1810,9 @@ async function run(line, w, opts = {}) {
         await api('wa:leave', w.jid); w.add(T.part(cleanNick(S.me.name), num(S.me.id) + '@s.whatsapp.net', 'saiu do grupo', w.name)); return;
       }
       case 'clear': case 'cls': case 'limpar': return w.clear();
-      case 'list': case 'canais': return cmdList(args);
+      case 'list': case 'canais':
+        if (/^(on|off)$/i.test(args.trim())) { await setCfg({ showList: /on/i.test(args) }); return w.add(T.info(`Lista de Canais ao conectar: ${C}12${S.cfg.showList ? 'LIGADO' : 'desligado'}`)); }
+        return cmdList(args);
       case 'contatos': case 'users': case 'usuarios': case 'who': return cmdUsers(args);
       case 'autojoin': {
         if (/^(on|off)$/i.test(args)) { await setCfg({ autojoinAll: /on/i.test(args) }); return w.add(T.info(`Auto-join de todos os grupos: ${C}12${S.cfg.autojoinAll ? 'LIGADO' : 'desligado'}`)); }
@@ -1822,7 +1919,7 @@ async function run(line, w, opts = {}) {
         return w.add(`${T.pre} ${C}12${U}Dica${U}:${C}2 ${t}`);
       }
       case 'atalhos': {
-        for (const [k, d] of [['Alt+1..9', 'vai para a janela N'], ['Ctrl+Tab', 'próxima janela'], ['Ctrl+F', 'localizar na janela (Enter = anterior, Shift+Enter = próxima)'], ['Ctrl+V', 'com imagem copiada: envia a imagem (com legenda)'], ['Ctrl+Espaço', 'abre a lista de emojis'], ['Ctrl+Shift+Espaço', 'abre as figurinhas'], ['Tab', 'completa o nick (Tab de novo alterna; vira menção no WhatsApp)'], ['↑ / ↓', 'histórico do que você digitou'], ['Duplo-clique no pvt', 'whois'], ['Botão direito na linha', 'responder (citar)'], ['Selecionar texto', 'copia automaticamente'], ['Esc', 'cancela resposta'], ['Ctrl+B / Ctrl+I', 'negrito / itálico'], ['Ctrl+L', 'limpar janela'], ['Ctrl+W', 'fechar janela'], ['PgUp / PgDn', 'rolar o texto']]) w.add(`${C}12${k.padEnd(22)}${C}01${d}`);
+        for (const [k, d] of [['Alt+1..9', 'vai para a janela N'], ['Ctrl+Tab', 'próxima janela'], ['Ctrl+F', 'localizar na janela (Enter = anterior, Shift+Enter = próxima)'], ['Ctrl+V', 'com imagem copiada: envia a imagem (com legenda)'], ['Ctrl+Espaço', 'abre a lista de emojis'], ['Ctrl+Shift+Espaço', 'abre as figurinhas'], ['Tab', 'completa o nick (Tab de novo alterna; vira menção no WhatsApp) — e também comandos: /not + Tab = /notify'], ['↑ / ↓', 'histórico do que você digitou'], ['Duplo-clique no pvt', 'whois'], ['Botão direito na linha', 'responder (citar)'], ['Selecionar texto', 'copia automaticamente'], ['Esc', 'cancela resposta'], ['Ctrl+B / Ctrl+I', 'negrito / itálico'], ['Ctrl+L', 'limpar janela'], ['Ctrl+W', 'fechar janela'], ['PgUp / PgDn', 'rolar o texto']]) w.add(`${C}12${k.padEnd(22)}${C}01${d}`);
         return;
       }
       case 'ajuda': case 'help': {
@@ -1866,6 +1963,14 @@ async function run(line, w, opts = {}) {
         return w.add(T.info(`Ícones: ${C}12${v === 'classic' ? 'clássicos (CyberScript)' : 'modernos'}`));
       }
       case 'atualizar': case 'update': case 'versao': return cmdUpdate(w);
+      case 'reagir': case 'react': case 'reacao': {
+        if (!w.jid) return w.add(T.err('Abra uma conversa para reagir.'));
+        const lns = [...w.buf.querySelectorAll('.ln[data-id]')].filter((l) => l.dataset.jid);
+        const ln = lns[lns.length - 1];
+        if (!ln) return w.add(T.err('Nenhuma mensagem para reagir.'));
+        if (!a1) return window.EmojiPicker.open(w.edit, w.emo || w.edit, (em) => reactTo(w, ln, em));
+        return reactTo(w, ln, /^(-|nada|tirar)$/i.test(a1) ? '' : a1);
+      }
       case 'figurinhas': case 'figurinha': case 'stickers': if (!w.jid) return w.add(T.err('Abra uma conversa para mandar figurinhas.')); return openStickers(w, w.stk);
       case 'enquete': case 'poll': {
         if (!w.jid) return w.add(T.err('Abra uma conversa para criar a enquete.'));
@@ -1962,7 +2067,7 @@ function pumpLinkPrev() {
     api('app:linkPreview', el.dataset.url).then((v) => {
       if (!el.isConnected) return;
       const buf = el.closest('.buffer'); const stick = buf && buf.scrollTop + buf.clientHeight >= buf.scrollHeight - 20;
-      if (v?.title) { el.outerHTML = linkPrevHtml(v); if (stick) buf.scrollTop = buf.scrollHeight; } else el.remove();
+      if (v?.title) { el.outerHTML = linkPrevHtml(v); if (stick) buf.scrollTop = buf.scrollHeight; } else if (el.classList.contains('loading')) { el.className = 'lprev none'; el.textContent = 'sem prévia para este link'; } else el.remove();
     }).catch(() => el.remove()).finally(() => { lpRunning--; pumpLinkPrev(); });
   }
 }
@@ -2315,7 +2420,7 @@ async function cmdList(filter) {
     groups.map((g) => ({ id: g.id, q: g.name + ' ' + (g.topic || ''), cells: [chanOf(g.id, g.name), g.size || '?', (g.topic || '').replace(/\s+/g, ' ')] })),
     filter, (id) => openChannel(id, true),
     (id) => [['Entrar', () => openChannel(id, true)], ['Informações', () => openChannel(id, true).then((w) => cmdInfo(w))], '-',
-      [(S.cfg.autojoin || []).includes(id) ? 'Remover do Auto-Join' : 'Adicionar ao Auto-Join', () => { const l = new Set(S.cfg.autojoin || []); l.has(id) ? l.delete(id) : l.add(id); setCfg({ autojoin: [...l] }); }]],
+      [(S.cfg.autojoin || []).includes(id) ? 'Remover do Auto-Join' : 'Adicionar ao Auto-Join', () => { const l = new Set(S.cfg.autojoin || []); l.has(id) ? l.delete(id) : l.add(id); setCfg({ autojoin: [...l] }); }], '-', ['Abrir esta lista ao conectar', () => setCfg({ showList: !S.cfg.showList }), false, { checked: !!S.cfg.showList }]],
     (f) => cmdList(f));
 }
 // contatos com quem você conversou por último (abre sozinho ao conectar, se habilitado)
@@ -2324,7 +2429,7 @@ async function cmdRecent(n = 30, auto = false) {
   if (!(S.contacts && S.contacts.length) && S.conn === 'online') { try { S.contacts = await api('wa:contacts'); for (const c of S.contacts) indexNick(c.nick, c.id); } catch {} }
   const byId = new Map((S.contacts || []).map((c) => [c.id, c]));
   const isNum = (x) => !x || /^\+?[\d\s()-]+$/.test(String(x));
-  const nameOf = (c) => { const k = byId.get(c.id); for (const x of [k?.nick, k?.push, c.name]) if (!isNum(x)) return x; return '+' + num(c.id); };
+  const nameOf = (c) => { const k = byId.get(c.id); for (const x of [k?.nick, k?.push, c.name]) if (visible(x) && !isNum(x)) return x; return '+' + num(c.id); };
   const hid = S.cfg.recentHidden || {};
   // removidos da lista voltam sozinhos quando a conversa tiver mensagem nova
   const list = (S.chats || []).filter((c) => !c.group && c.ts && /@s\.whatsapp\.net$/.test(c.id) && !(hid[c.id] && c.ts <= hid[c.id])).sort((a, b) => b.ts - a.ts).slice(0, Math.max(1, Math.min(200, Number(n) || 30))).map((c) => ({ ...c, name: nameOf(c) }));
@@ -2718,11 +2823,16 @@ async function init() {
   play('start');
   window.cw.on('wa:event', onWa);
   window.cw.on('cfg:changed', (c) => { S.cfg = c; });
+  // arquivo solto fora de uma janela de conversa não faz nada (nunca abre o arquivo dentro do app)
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', (e) => e.preventDefault());
   window.cw.on('app:update', (i) => showUpdate(i));
+  window.cw.on('unread:clear', () => clearAllUnread());
+  addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(clearVisibleUnread, 300); });
   window.cw.on('ui:open', (jid) => { const w = getWin(jid); if (w) activate(jid); });
   window.cw.on('win:state', (s) => document.body.classList.toggle('maxed', s === 'max'));
   addEventListener('blur', () => document.body.classList.add('inactive'));
-  addEventListener('focus', () => { document.body.classList.remove('inactive'); const w = S.wins.get(S.active); clearUnread(w); if (w?.jid && S.conn === 'online') api('wa:read', w.jid).catch(() => {}); });
+  addEventListener('focus', () => { document.body.classList.remove('inactive'); const w = S.wins.get(S.active); clearVisibleUnread(); void w; if (w?.jid && S.conn === 'online') api('wa:read', w.jid).catch(() => {}); });
   $('#titlebar').addEventListener('dblclick', () => api('win:max'));
   document.querySelectorAll('.tbtns [data-cmd]').forEach((b) => b.addEventListener('click', () => api(b.dataset.cmd)));
   addEventListener('keydown', (e) => {

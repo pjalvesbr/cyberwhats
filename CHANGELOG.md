@@ -2,6 +2,24 @@
 
 O CyberWhats usa sempre 3.2.x.y, em homenagem ao CyberScript 3.2.
 
+## 3.2.0.4
+- **Notify List** e **Ignore List** mostram todos os seus contatos com caixinha de marcar, filtro por nome ou número e "Outro número..." para quem não está na agenda.
+- Auto-Join com caixinhas de marcar (dá para desmarcar todos), botões Marcar/Desmarcar todos e contador; texto da opção "todos os meus grupos" corrigido.
+- Canais abrem sempre no fim da conversa; a linha "mensagens novas" continua marcando onde você parou.
+- **Segurança e privacidade**:
+  - Prévia de links recebidos só é buscada quando você clica em "▸ ver prévia do link" (buscar sozinho entregava seu IP para quem mandou o link). Prévias que já vêm na mensagem continuam aparecendo.
+  - A busca de prévias só acessa endereços públicos http(s): nada de arquivos do PC, rede local ou localhost, nem nos redirecionamentos e imagens.
+  - Links só abrem se forem http, https ou e-mail (protocolos do Windows como `search-ms:` e `ms-msdt:` são bloqueados).
+  - A janela do app não abre mais arquivos arrastados para ela, e só a janela principal consegue usar as funções internas.
+  - Arquivos recebidos: nome limpo (sem caracteres que disfarçam a extensão), sem sobrescrever outro arquivo, marcados como "baixados da internet" para o Windows avisar, e confirmação antes de abrir programas (.exe, .bat, .lnk...).
+  - Arquivos internos do CyberWhats (sessão, configurações, histórico) não podem ser enviados.
+  - Opção para não consultar o IP público (Opções > Geral).
+- **Reagir a mensagens**: botão direito na linha > **Reagir** (👍 ❤️ 😂 😮 😢 🙏, outro emoji ou tirar a reação), ou `/reagir 👍` para a última mensagem recebida.
+- Opção de abrir a **Lista de Canais** ao conectar (Opções, `/list on|off` ou botão direito na lista); ela fica fixa à esquerda, depois de Status e Contatos Recentes.
+- Contador de mensagens novas da bandeja zera direito ao ler (e a bandeja ganhou **Marcar tudo como lido**).
+- **Tab completa comandos**: `/not` + Tab vira `/notify`; se vários comandos começam igual, completa o que der e mostra a lista (Tab de novo alterna entre eles). Vale também para os aliases dos scripts.
+- Contatos com nome "invisível" no perfil (ㅤ e outros caracteres em branco) agora aparecem com o nome da agenda, o nick do canal ou o número, em vez de um nick vazio no pvt, na switchbar e nos Contatos Recentes.
+
 ## 3.2.0.3
 - **22 temas originais do CyberScript** (BitchX, Blue, Calm Blue, Dark, Focalize, Fox, Fragma, Fun-Style, GirlStyle, Hysteria, Monolith, Nature, Padrao, Popua, Rustic Ash, SbIRC, Seeper, SubSeven, Syntax, Waste, Winter, eXagon), com as cores, os formatos de mensagem, o timestamp e os schemes de cada um. Theme Manager com prévia, autor e descrição; também por `/tema`. O Padrão (do xBinho) continua sendo o tema padrão.
 - Trocar de tema redesenha as conversas abertas no formato novo.

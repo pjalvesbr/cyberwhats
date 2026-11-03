@@ -33,7 +33,7 @@ const defaults = {
   timestamp: true, sounds: true, readReceipts: true, typing: true, notifyPopups: true,
   awayAutoReply: false, showMotd: true, showRecent: true, inlineMedia: true, autoDownload: true, awayMessage: 'Estou away no momento, respondo assim que voltar.',
   notify: [], ignore: [], autojoin: [], nicklistWidth: 140, fontSize: 16, uiSize: 13, theme: 'cs:padrao', themeScheme: '', iconSet: 'modern', engine: 'go',
-  trayMinimize: true, trayClose: false, startWithWindows: false, checkUpdates: true, linkPreviews: true
+  trayMinimize: true, trayClose: false, startWithWindows: false, checkUpdates: true, linkPreviews: true, showList: false, publicIp: true
 };
 const loadCfg = () => { try { return { ...defaults, ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')) }; } catch { return { ...defaults }; } };
 let cfg = loadCfg();
@@ -58,11 +58,28 @@ function createWindow() {
   win.on('close', (e) => { if (cfg.trayClose && tray && !quitting) { e.preventDefault(); win.hide(); trayHint(); } });
   win.on('maximize', () => win.webContents.send('win:state', 'max'));
   win.on('unmaximize', () => win.webContents.send('win:state', 'normal'));
-  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
-  win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('file:')) { e.preventDefault(); shell.openExternal(url); } });
+  win.webContents.setWindowOpenHandler(({ url }) => { safeOpen(url); return { action: 'deny' }; });
+  // a janela nunca sai do index.html (nem arrastando um arquivo .html para ela)
+  win.webContents.on('will-navigate', (e, url) => { e.preventDefault(); if (/^https?:/i.test(url)) safeOpen(url); });
+  win.webContents.on('will-attach-webview', (e) => e.preventDefault());
 }
 
 app.on('second-instance', () => showWin());
+
+// links: só abre no navegador/e-mail o que é http(s) ou mailto (nada de file:, search-ms:, ms-msdt: e afins)
+function safeOpen(u) {
+  let url; try { url = new URL(String(u || '')); } catch { return false; }
+  if (!['http:', 'https:', 'mailto:'].includes(url.protocol)) return false;
+  shell.openExternal(url.toString());
+  return true;
+}
+// as IPC só respondem à janela principal do app
+const RENDERER_INDEX = pathToFileURL(path.join(__dirname, 'renderer/index.html')).toString();
+function trustedSender(e) {
+  try { return e.sender === win?.webContents && String(e.senderFrame?.url || '').split('#')[0] === RENDERER_INDEX; } catch { return false; }
+}
+// arquivos que o Windows executa ao abrir
+const RISKY_EXT = /\.(exe|com|bat|cmd|ps1|psm1|vbs|vbe|js|jse|wsf|wsh|hta|msi|msp|scr|pif|lnk|url|reg|jar|cpl|dll|sys|inf|iso|img|vhd|vhdx|appx|appref-ms|chm|application|gadget|msc|ws|xll|html?|svg|mht)$/i;
 
 // ---------------- versão nova (GitHub Releases) ----------------
 const cwVersion = () => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).cwVersion || app.getVersion(); } catch { return app.getVersion(); } };
@@ -91,6 +108,7 @@ function trayMenu() {
   if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Abrir o CyberWhats', click: showWin },
+    { label: 'Marcar tudo como lido', enabled: unread > 0, click: () => win?.webContents.send('unread:clear') },
     { type: 'separator' },
     { label: 'Minimizar para a bandeja', type: 'checkbox', checked: !!cfg.trayMinimize, click: (i) => setCfgMain({ trayMinimize: i.checked }) },
     { label: 'Fechar (X) vai para a bandeja', type: 'checkbox', checked: !!cfg.trayClose, click: (i) => setCfgMain({ trayClose: i.checked }) },
@@ -144,6 +162,7 @@ app.whenReady().then(() => {
   setTimeout(autoCheck, 15000); setInterval(autoCheck, 12 * 3600 * 1000);
 
   const h = (ch, fn) => ipcMain.handle(ch, async (_e, ...a) => {
+    if (!trustedSender(_e)) return { ok: false, error: 'origem não permitida' };
     try { return { ok: true, data: await fn(...a) }; } catch (e) { return { ok: false, error: e?.message || String(e) }; }
   });
   h('wa:connect', (opts) => { wa.connect(opts || {}); return true; });
@@ -162,6 +181,7 @@ app.whenReady().then(() => {
   h('st:addMine', (src) => { needGo('addMineSticker'); return wa.addMineSticker(src); });
   h('st:saveMine', (bytes) => { needGo('saveMineSticker'); return wa.saveMineSticker(bytes); });
   h('st:removeMine', (file) => { needGo('removeMineSticker'); return wa.removeMineSticker(file); });
+  h('wa:react', (jid, id, emoji) => { if (!wa.react) throw new Error('só no motor whatsmeow'); return wa.react(jid, id, emoji); });
   h('wa:pollVote', (jid, id, options) => { if (!wa.pollVote) throw new Error('só no motor whatsmeow'); return wa.pollVote(jid, id, options || []); });
   h('wa:sendPoll', (jid, name, options, multi) => { if (!wa.sendPoll) throw new Error('só no motor whatsmeow'); return wa.sendPoll(jid, name, options, multi); });
   h('app:linkPreview', (url) => (cfg.linkPreviews === false ? null : linkPreview(url)));
@@ -183,9 +203,24 @@ app.whenReady().then(() => {
       for (const f of r.filePaths) out.push(await wa.sendFile(jid, f, caption));
       return out;
     }
-    return [await wa.sendFile(jid, file, caption, opts)];
+    // proteção: arquivos internos do app (sessão, configurações, histórico) nunca saem, só os temporários (imagem colada, voz)
+    const real = (() => { try { return fs.realpathSync(String(file)); } catch { return path.resolve(String(file)); } })();
+    const inside = (dir) => { const d = path.resolve(dir) + path.sep; return real.toLowerCase().startsWith(d.toLowerCase()); };
+    if (inside(dataDir) && !inside(path.join(dataDir, 'tmp'))) throw new Error('esse arquivo é interno do CyberWhats e não pode ser enviado');
+    return [await wa.sendFile(jid, real, caption, opts)];
   });
-  h('wa:open', async (jid, id) => { const f = await wa.download(jid, id); await shell.openPath(f); return f; });
+  h('wa:open', async (jid, id) => {
+    const f = await wa.download(jid, id);
+    // arquivo que roda sozinho (exe, bat, lnk...): pergunta antes e oferece só mostrar na pasta
+    if (RISKY_EXT.test(f)) {
+      const r = await dialog.showMessageBox(win, { type: 'warning', title: 'CyberWhats', buttons: ['Mostrar na pasta', 'Abrir mesmo assim', 'Cancelar'], defaultId: 0, cancelId: 2, noLink: true,
+        message: `"${path.basename(f)}" é um arquivo que pode executar programas no seu computador.`, detail: 'Só abra se você confia em quem mandou e estava esperando esse arquivo.' });
+      if (r.response === 0) shell.showItemInFolder(f);
+      if (r.response === 1) await shell.openPath(f);
+      return f;
+    }
+    await shell.openPath(f); return f;
+  });
   h('wa:read', (jid) => (cfg.readReceipts ? wa.markRead(jid) : null));
   h('wa:whois', (jid) => wa.whois(jid));
   h('wa:pic', (jid) => wa.pic(jid));
@@ -205,7 +240,7 @@ app.whenReady().then(() => {
   h('cfg:set', (patch) => { cfg = { ...cfg, ...patch }; saveCfg(); if (patch && ('startWithWindows' in patch || 'trayMinimize' in patch || 'trayClose' in patch)) { applyLogin(); trayMenu(); } return cfg; });
   h('app:openLogs', () => shell.openPath(path.join(dataDir, 'logs')));
   h('app:openDownloads', () => { fs.mkdirSync(path.join(downloadDir, 'Recebidos'), { recursive: true }); return shell.openPath(path.join(downloadDir, 'Recebidos')); });
-  h('app:openUrl', (u) => shell.openExternal(u));
+  h('app:openUrl', (u) => { if (!safeOpen(u)) throw new Error('esse tipo de link não pode ser aberto'); return true; });
   h('app:logError', (txt) => { try { fs.mkdirSync(path.join(dataDir, 'logs'), { recursive: true }); fs.appendFileSync(path.join(dataDir, 'logs', 'erros.log'), `[${new Date().toISOString()}] ${String(txt).slice(0, 2000)}\r\n`); } catch {} return true; });
   h('app:checkUpdate', () => checkUpdate(true));
   h('app:version', () => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).cwVersion || app.getVersion(); } catch { return app.getVersion(); } });
@@ -234,7 +269,8 @@ app.whenReady().then(() => {
     }
   };
   h('app:sysinfo', () => {
-    if (Date.now() - publicIpAt > (publicIp ? 30 * 60e3 : 2 * 60e3)) refreshPublicIp();
+    if (cfg.publicIp === false) publicIp = '';
+    else if (Date.now() - publicIpAt > (publicIp ? 30 * 60e3 : 2 * 60e3)) refreshPublicIp();
     const total = Math.round(os.totalmem() / 1048576), used = total - Math.round(os.freemem() / 1048576);
     const u = Math.floor(os.uptime());
     const uptime = (u >= 86400 ? Math.floor(u / 86400) + 'd ' : '') + (u >= 3600 ? (Math.floor(u / 3600) % 24) + 'hr ' : '') + (Math.floor(u / 60) % 60) + 'mins ' + (u % 60) + 'secs';

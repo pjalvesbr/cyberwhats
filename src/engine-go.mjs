@@ -19,7 +19,7 @@ const num = (j) => String(j || '').split('@')[0];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function binPath() {
-  if (process.env.CW_ENGINE_BIN) return process.env.CW_ENGINE_BIN;
+  if (process.env.CW_ENGINE_BIN && !app.isPackaged) return process.env.CW_ENGINE_BIN; // só em desenvolvimento
   const exe = process.platform === 'win32' ? 'cw-engine.exe' : 'cw-engine';
   const cands = [
     path.join(process.resourcesPath || '', 'bin', exe),
@@ -115,7 +115,7 @@ export class WhatsAppGo extends EventEmitter {
     this.chats.set(e.chat, c);
     return true;
   }
-  pub(e) { if (!e) return e; const { raw, senderRaw, ...rest } = e; return rest; }
+  pub(e) { if (!e) return e; const { raw, senderRaw, localFile, ...rest } = e; return rest; }
 
   // ---------------- processo Go ----------------
   start() {
@@ -449,6 +449,13 @@ export class WhatsAppGo extends EventEmitter {
     return name;
   }
   removeMineSticker(file) { const f = path.join(this.mineDir, path.basename(String(file))); if (fs.existsSync(f)) fs.unlinkSync(f); return true; }
+  async react(jid, id, emoji) {
+    const o = this.getHistory(jid).find((x) => x.id === id);
+    if (!o) throw new Error('mensagem não encontrada');
+    await this.call('react', { chat: o.alt || o.chat, sender: o.fromMe ? '' : (o.senderRaw || o.sender), id, fromMe: !!o.fromMe, emoji: emoji || '' });
+    this.applyReaction(o, { fromMe: true, nick: this.me?.name || '', emoji: emoji || '' });
+    return true;
+  }
   async pollVote(jid, id, options) {
     const o = this.getHistory(jid).find((x) => x.id === id);
     if (!o?.poll) throw new Error('enquete não encontrada');
@@ -470,14 +477,24 @@ export class WhatsAppGo extends EventEmitter {
   async download(jid, id) {
     const e = this.getHistory(jid).find((x) => x.id === id);
     if (!e?.raw) throw new Error('Mídia não disponível');
+    if (e.localFile && fs.existsSync(e.localFile)) return e.localFile; // já baixado antes: abre o mesmo
     const r = await this.call('download', { raw: e.raw }, 300000);
     const mime = String(r.mimetype || '').split(';')[0];
     let name = r.filename || e.fileName || `${e.media || 'midia'}_${new Date(e.ts * 1000).toISOString().slice(0, 19).replace(/[:T]/g, '-')}${EXT[mime] || ''}`;
-    name = name.replace(/[\\/:*?"<>|]/g, '_');
+    // nome seguro: sem barras, sem caracteres invisíveis/de direção (que disfarçam ".exe"), sem nomes reservados do Windows
+    name = String(name).replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '').replace(/[\\/:*?"<>|]/g, '_').replace(/[. ]+$/, '').trim().slice(0, 180);
+    if (!name || /^\.+$/.test(name)) name = 'arquivo';
+    if (/^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$/i.test(name)) name = '_' + name;
     const dir = path.join(this.downloadDir, 'Recebidos');
     fs.mkdirSync(dir, { recursive: true });
-    const out = path.join(dir, name);
+    // não sobrescreve: arquivo (2).pdf, arquivo (3).pdf...
+    const ext = path.extname(name), stem = name.slice(0, name.length - ext.length);
+    let out = path.join(dir, name);
+    for (let i = 2; fs.existsSync(out) && i < 1000; i++) out = path.join(dir, `${stem} (${i})${ext}`);
     fs.writeFileSync(out, Buffer.from(r.data, 'base64'));
+    // "Mark of the Web": o Windows trata o arquivo como baixado da internet (SmartScreen avisa)
+    if (process.platform === 'win32') { try { fs.writeFileSync(out + ':Zone.Identifier', '[ZoneTransfer]\r\nZoneId=3\r\n'); } catch {} }
+    e.localFile = out; this.dirty.add(jid);
     return out;
   }
   // mídia para mostrar no chat: baixa uma vez para media-cache/ e devolve uma URL cwmedia://
