@@ -4,6 +4,7 @@ O CyberWhats usa sempre 3.2.x.y, em homenagem ao CyberScript 3.2.
 
 ## 3.2.0.4
 - **Notify List** e **Ignore List** mostram todos os seus contatos com caixinha de marcar, filtro por nome ou número e "Outro número..." para quem não está na agenda.
+- Corrigido: o filtro das listas com caixinhas (Notify, Ignore, Auto-Join) não escondia os itens.
 - Auto-Join com caixinhas de marcar (dá para desmarcar todos), botões Marcar/Desmarcar todos e contador; texto da opção "todos os meus grupos" corrigido.
 - Canais abrem sempre no fim da conversa; a linha "mensagens novas" continua marcando onde você parou.
 - **Segurança e privacidade**:

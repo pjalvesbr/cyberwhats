@@ -335,3 +335,4 @@ body.child-max .mdiwin.max:not(.active) { visibility: hidden; content-visibility
 .gp-bar .btn { padding: 1px 8px; }
 .gp-cnt { margin-left: auto; color: #606060; }
 .dlg label > span { flex: 1; }
+.dlg label.gp-it[hidden], .dlg [hidden] { display: none !important; }
