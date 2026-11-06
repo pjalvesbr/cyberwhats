@@ -2,6 +2,12 @@
 
 O CyberWhats usa sempre 3.2.x.y, em homenagem ao CyberScript 3.2.
 
+## 3.2.0.5
+- **Salvar como...** na janela da foto e no botão direito de qualquer mídia (foto, vídeo, áudio, arquivo): você escolhe a pasta, e o app avisa onde salvou (clique na linha para abrir a pasta). "Abrir" continua guardando em Documentos\CyberWhats\Recebidos.
+- Motor atualizado para a whatsmeow mais recente (05/11): sincronização mais tolerante a erros de conferência, reconecta sozinho quando o servidor não responde, não trava ao conectar, protocolo do WhatsApp atualizado, respeita os limites do servidor na sincronização e mantém o nome mais recente dos contatos.
+- **Mensagens de quando o app estava desligado** chegam em silêncio: sem balões, sons nem janelas abrindo. No fim sai um resumo só ("Enquanto você estava fora: 312 mensagens em 18 conversas"), também no Status, com duplo-clique para abrir cada conversa.
+- **Balões agrupados**: no máximo 1 por conversa a cada 10 segundos ("#SNES: 6 mensagens novas") e 3 a cada 30 segundos; pvt e menção a você sempre têm balão. Dá para desligar em Opções > Windows.
+
 ## 3.2.0.4
 - **Notify List** e **Ignore List** mostram todos os seus contatos com caixinha de marcar, filtro por nome ou número e "Outro número..." para quem não está na agenda.
 - Corrigido: o filtro das listas com caixinhas (Notify, Ignore, Auto-Join) não escondia os itens.

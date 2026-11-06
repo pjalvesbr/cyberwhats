@@ -33,7 +33,7 @@ const defaults = {
   timestamp: true, sounds: true, readReceipts: true, typing: true, notifyPopups: true,
   awayAutoReply: false, showMotd: true, showRecent: true, inlineMedia: true, autoDownload: true, awayMessage: 'Estou away no momento, respondo assim que voltar.',
   notify: [], ignore: [], autojoin: [], nicklistWidth: 140, fontSize: 16, uiSize: 13, theme: 'cs:padrao', themeScheme: '', iconSet: 'modern', engine: 'go',
-  trayMinimize: true, trayClose: false, startWithWindows: false, checkUpdates: true, linkPreviews: true, showList: false, publicIp: true
+  trayMinimize: true, trayClose: false, startWithWindows: false, checkUpdates: true, linkPreviews: true, showList: false, publicIp: true, groupPopups: true
 };
 const loadCfg = () => { try { return { ...defaults, ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')) }; } catch { return { ...defaults }; } };
 let cfg = loadCfg();
@@ -80,6 +80,73 @@ function trustedSender(e) {
 }
 // arquivos que o Windows executa ao abrir
 const RISKY_EXT = /\.(exe|com|bat|cmd|ps1|psm1|vbs|vbe|js|jse|wsf|wsh|hta|msi|msp|scr|pif|lnk|url|reg|jar|cpl|dll|sys|inf|iso|img|vhd|vhdx|appx|appref-ms|chm|application|gadget|msc|ws|xll|html?|svg|mht)$/i;
+
+// ---------------- balões do Windows ----------------
+// mensagens acumuladas (app desligado) não viram balão: no fim sai um resumo só.
+// mensagens novas: no máximo 1 balão por conversa a cada 10 s e 3 a cada 30 s; pvt e menção a você sempre têm balão.
+const notifier = (() => {
+  const chatLabel = (m) => (m.group ? '#' + String(m.chatName || 'grupo').replace(/\s+/g, '_') : m.nick || 'pvt');
+  const bodyOf = (m) => String(m.text || (m.media ? `[${m.media}] ${m.caption || ''}` : '')).slice(0, 200);
+  const can = () => cfg.notifyPopups && win && !win.isDestroyed() && !win.isFocused() && Notification.isSupported();
+  const show = (title, body, chat) => {
+    if (!can()) return;
+    const n = new Notification({ title, body, silent: true });
+    n.on('click', () => { showWin(); if (chat) win.webContents.send('ui:open', chat); });
+    n.show(); win.flashFrame(true);
+  };
+  // ---- acumuladas
+  let syncing = false, syncTimer = null; const back = new Map();
+  const flushBack = () => {
+    clearTimeout(syncTimer); syncTimer = null;
+    if (!back.size) return;
+    const items = [...back.values()].sort((a, b) => b.n - a.n);
+    back.clear();
+    const total = items.reduce((a, x) => a + x.n, 0);
+    win?.webContents.send('wa:event', { type: 'backlog', total, items: items.map(({ chat, raw, group, n }) => ({ chat, name: raw, group, n })) });
+    show(`Enquanto você estava fora: ${total} mensage${total === 1 ? 'm' : 'ns'} em ${items.length} conversa${items.length === 1 ? '' : 's'}`,
+      items.slice(0, 4).map((x) => `${x.name} (${x.n})`).join(', ') + (items.length > 4 ? '...' : ''), items.length === 1 ? items[0].chat : null);
+  };
+  // ---- novas
+  const perChat = new Map(); // chat -> { last, pend, timer, m }
+  let recent = []; let over = new Map(); let overTimer = null;
+  const flushOver = () => {
+    overTimer = null; if (!over.size) return;
+    const total = [...over.values()].reduce((a, x) => a + x.n, 0), list = [...over.values()].sort((a, b) => b.n - a.n);
+    over = new Map(); recent.push(Date.now());
+    show(`${total} mensage${total === 1 ? 'm nova' : 'ns novas'} em ${list.length} conversa${list.length === 1 ? '' : 's'}`, list.slice(0, 4).map((x) => `${x.name} (${x.n})`).join(', '), list.length === 1 ? list[0].chat : null);
+  };
+  const budget = () => { const now = Date.now(); recent = recent.filter((t) => now - t < 30000); return recent.length < 3; };
+  const emitOne = (m, count) => {
+    const name = chatLabel(m);
+    if (!budget()) { const o = over.get(m.chat) || { chat: m.chat, name, n: 0 }; o.n += count; over.set(m.chat, o); if (!overTimer) overTimer = setTimeout(flushOver, Math.max(2000, 30000 - (Date.now() - recent[0]))); return; }
+    recent.push(Date.now());
+    if (count > 1) show(`${name}: ${count} mensagens novas`, `${m.group ? m.nick + ': ' : ''}${bodyOf(m)}`, m.chat);
+    else show(m.group ? `${name} — ${m.nick}` : `Pvt de ${m.nick}`, bodyOf(m), m.chat);
+  };
+  return {
+    sync(ev) {
+      if (ev.state === 'start') { syncing = true; clearTimeout(syncTimer); syncTimer = setTimeout(() => { syncing = false; flushBack(); }, 5 * 60000); }
+      if (ev.state === 'done') { syncing = false; flushBack(); }
+    },
+    message(m) {
+      if (m.backlog) {
+        const b = back.get(m.chat) || { chat: m.chat, name: chatLabel(m), raw: m.group ? m.chatName : m.nick, group: !!m.group, n: 0 }; b.n++; back.set(m.chat, b);
+        if (!syncing) { clearTimeout(syncTimer); syncTimer = setTimeout(flushBack, 5000); } // atrasadas soltas: resumo 5 s depois da última
+        return;
+      }
+      if (!can()) return;
+      const important = !m.group || (m.mentions || []).some((x) => x.me);
+      if (important) { recent.push(Date.now()); return show(m.group ? `${chatLabel(m)} — ${m.nick} mencionou você` : `Pvt de ${m.nick}`, bodyOf(m), m.chat); }
+      if (cfg.groupPopups === false) return show(`${chatLabel(m)} — ${m.nick}`, bodyOf(m), m.chat); // sem agrupar: um balão por mensagem
+      const st = perChat.get(m.chat) || { last: 0, pend: 0, timer: null };
+      perChat.set(m.chat, st);
+      const now = Date.now();
+      if (now - st.last >= 10000 && !st.timer) { st.last = now; emitOne(m, 1); return; }
+      st.pend++; st.m = m;
+      if (!st.timer) st.timer = setTimeout(() => { st.timer = null; st.last = Date.now(); const n = st.pend; st.pend = 0; if (n) emitOne(st.m, n); }, Math.max(500, 10000 - (now - st.last)));
+    }
+  };
+})();
 
 // ---------------- versão nova (GitHub Releases) ----------------
 const cwVersion = () => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).cwVersion || app.getVersion(); } catch { return app.getVersion(); } };
@@ -147,13 +214,8 @@ app.whenReady().then(() => {
   wa.on('wa', (ev) => {
     if (!win || win.isDestroyed()) return;
     win.webContents.send('wa:event', ev);
-    if (ev.type === 'message' && !ev.msg.fromMe && cfg.notifyPopups && !win.isFocused() && Notification.isSupported()) {
-      const title = ev.msg.group ? `#${ev.msg.chatName} — ${ev.msg.nick}` : `Pvt de ${ev.msg.nick}`;
-      const n = new Notification({ title, body: ev.msg.text || `[${ev.msg.media}] ${ev.msg.caption || ''}`, silent: true });
-      n.on('click', () => { win.show(); win.focus(); win.webContents.send('ui:open', ev.msg.chat); });
-      n.show();
-      win.flashFrame(true);
-    }
+    if (ev.type === 'offline') notifier.sync(ev);
+    if (ev.type === 'message' && !ev.msg.fromMe) notifier.message(ev.msg);
   });
   createWindow();
   setupTray(); applyLogin();
@@ -221,6 +283,16 @@ app.whenReady().then(() => {
     }
     await shell.openPath(f); return f;
   });
+  // "Salvar como...": baixa (ou reaproveita o já baixado) e copia para onde o usuário escolher
+  h('wa:saveAs', async (jid, id) => {
+    const f = await wa.download(jid, id);
+    const r = await dialog.showSaveDialog(win, { title: 'Salvar mídia como', defaultPath: path.join(cfg.lastSaveDir || app.getPath('pictures'), path.basename(f)) });
+    if (r.canceled || !r.filePath) return null;
+    fs.copyFileSync(f, r.filePath);
+    cfg = { ...cfg, lastSaveDir: path.dirname(r.filePath) }; saveCfg();
+    return r.filePath;
+  });
+  h('app:showFile', (f) => { const p = path.resolve(String(f)); if (fs.existsSync(p)) shell.showItemInFolder(p); return true; });
   h('wa:read', (jid) => (cfg.readReceipts ? wa.markRead(jid) : null));
   h('wa:whois', (jid) => wa.whois(jid));
   h('wa:pic', (jid) => wa.pic(jid));

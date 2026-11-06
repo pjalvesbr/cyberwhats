@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/ncruces/go-sqlite3 v0.35.6
-	go.mau.fi/whatsmeow v0.0.0-20261027104441-1eec1136a50b
+	go.mau.fi/whatsmeow v0.0.0-20261105212532-307a2edf117d
 	google.golang.org/protobuf v1.36.12
 )
 

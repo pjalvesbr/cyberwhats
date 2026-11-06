@@ -233,6 +233,8 @@ class Win {
         const quick = ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((em) => [em + (mine === em ? '  (sua)' : ''), () => reactTo(this, ln, mine === em ? '' : em)]);
         extra.unshift(['Reagir', null, false, { children: [...quick, '-', ['Outro emoji...', () => window.EmojiPicker.open(this.edit, this.edit, (em) => reactTo(this, ln, em))], ['Tirar minha reação', () => reactTo(this, ln, ''), !mine]] }]);
       }
+      const med = ln?.querySelector('a.media[data-id], .inmedia[data-id]');
+      if (med) extra.unshift(['Salvar como...', () => saveMediaAs(this, med.dataset.chat, med.dataset.id)], ['Abrir', () => api('wa:open', med.dataset.chat, med.dataset.id).catch((er) => this.add(T.err(friendlyError(er, 'abrir o arquivo'))))], '-');
       const stk = ln?.querySelector('.inmedia.sticker');
       if (stk) extra.unshift(['Guardar figurinha em "Minhas"', () => api('st:addMine', { kind: 'recv', chat: stk.dataset.chat, id: stk.dataset.id }).then(() => this.add(T.info('Figurinha guardada em Minhas (botão de figurinhas ao lado da caixa de texto).'))).catch((er) => this.add(T.err(friendlyError(er, 'guardar a figurinha')))) ], '-');
       const type = this.type === 'channel' ? 'channel' : this.type === 'query' ? 'query' : 'status';
@@ -364,7 +366,7 @@ class Win {
     const im = e.target.closest('.inmedia:not(.audio)');
     if (im && !window.getSelection()?.toString()) {
       const full = im.querySelector('img.mfull');
-      if (full && !im.classList.contains('video')) { dialog({ title: 'Mídia', width: Math.min(innerWidth - 60, Math.max(320, full.naturalWidth + 40)), body: `<img src="${full.src}" style="display:block;max-width:100%;max-height:${innerHeight - 180}px;margin:0 auto">`, buttons: [['Salvar / abrir', () => api('wa:open', im.dataset.chat, im.dataset.id)], ['Fechar', null]] }); }
+      if (full && !im.classList.contains('video')) { dialog({ title: 'Mídia', width: Math.min(innerWidth - 60, Math.max(320, full.naturalWidth + 40)), body: `<img src="${full.src}" style="display:block;max-width:100%;max-height:${innerHeight - 180}px;margin:0 auto">`, buttons: [['Salvar como...', () => { saveMediaAs(this, im.dataset.chat, im.dataset.id); return KEEP; }], ['Abrir', () => api('wa:open', im.dataset.chat, im.dataset.id)], ['Fechar', null]] }); }
       else api('wa:open', im.dataset.chat, im.dataset.id).catch((err) => this.add(T.err(friendlyError(err, 'abrir a mídia'))));
       return;
     }
@@ -380,6 +382,9 @@ class Win {
   bufDbl(e) {
     const word = wordAt(e);
     window.getSelection()?.removeAllRanges();
+    // resumo "enquanto você estava fora" no Status: duplo-clique abre a conversa
+    const bl = e.target.closest('.ln.blog');
+    if (bl?.dataset.jid) { const j = bl.dataset.jid; if (j.endsWith('@g.us')) openChannel(j, true); else openQuery(j, bl.dataset.nick, true); return; }
     // duplo-clique num #canal escrito na tela (MOTD, /list, mensagens) = entra no canal
     if (word && word.startsWith('#') && word.length > 1) { const j = findChan(word); if (j) { openChannel(j, true); return; } }
     // igual ao IRC das antigas: duplo-clique no pvt = whois
@@ -1049,7 +1054,7 @@ function dlgOptions() {
       <fieldset><legend>Mídia</legend>${chk('inlineMedia', 'Mostrar fotos, figurinhas e vídeos no chat')}${chk('linkPreviews', 'Prévia de links (título do YouTube, Instagram...)')}${chk('autoDownload', 'Baixar automaticamente fotos, figurinhas, áudios e vídeos')}<div class="drow">Vídeos até <input type="text" data-k="videoMaxMB" style="width:40px" value="${esc(String(c.videoMaxMB || 25))}"> MB (maiores: clique para abrir)</div></fieldset>
       <fieldset><legend>Privacidade</legend>${chk('readReceipts', 'Enviar confirmação de leitura (tique azul)')}${chk('typing', 'Mostrar "digitando..." para os outros')}</fieldset>
       <fieldset><legend>Motor de conexão (precisa reiniciar)</legend><label><input type="radio" name="eng" value="go" ${c.engine !== 'web' ? 'checked' : ''}> whatsmeow — conexão direta (recomendado)</label><label><input type="radio" name="eng" value="web" ${c.engine === 'web' ? 'checked' : ''}> WhatsApp Web escondido (modo antigo)</label></fieldset>
-      <fieldset><legend>Windows</legend>${chk('trayMinimize', 'Minimizar para a bandeja (perto do relógio)')}${chk('trayClose', 'Fechar (X) deixa o CyberWhats rodando na bandeja')}${chk('startWithWindows', 'Iniciar junto com o Windows (abre na bandeja)')}${chk('checkUpdates', 'Avisar quando sair uma versão nova')}</fieldset>
+      <fieldset><legend>Windows</legend>${chk('trayMinimize', 'Minimizar para a bandeja (perto do relógio)')}${chk('groupPopups', 'Balões: agrupar mensagens (1 por conversa a cada 10 s, até 3 a cada 30 s)')}${chk('trayClose', 'Fechar (X) deixa o CyberWhats rodando na bandeja')}${chk('startWithWindows', 'Iniciar junto com o Windows (abre na bandeja)')}${chk('checkUpdates', 'Avisar quando sair uma versão nova')}</fieldset>
       <fieldset><legend>Away</legend>${chk('awayAutoReply', 'Responder pvts automaticamente quando away')}<div class="drow">Msg: <input type="text" data-k="awayMessage" style="flex:1" value="${esc(c.awayMessage || '')}"></div></fieldset>`,
     buttons: [['OK', (d) => {
       const p = {}; d.querySelectorAll('[data-k]').forEach((i) => (p[i.dataset.k] = i.type === 'checkbox' ? i.checked : i.value));
@@ -1381,6 +1386,13 @@ function setReaction(ln, who, emoji) {
   sp.textContent = top + (ln._reacts.size > 1 ? ' ' + ln._reacts.size : '');
   sp.title = [...ln._reacts].map(([n, e]) => `${n}: ${e}`).join('\n');
 }
+// salvar mídia num lugar escolhido (e dizer onde ficou)
+async function saveMediaAs(w, chat, id) {
+  try {
+    const f = await api('wa:saveAs', chat, id);
+    if (f) w.add(T.info(`Salvo em ${C}12${f}${C}02 ${C}14(clique para abrir a pasta)`), { html: '', cls: 'savedat' })?.addEventListener('click', () => api('app:showFile', f));
+  } catch (e) { w.add(T.err(friendlyError(e, 'salvar o arquivo'))); }
+}
 // reagir a uma mensagem (botão direito na linha > Reagir, ou /reagir)
 async function reactTo(w, ln, emoji) {
   const id = ln.dataset.id;
@@ -1587,6 +1599,20 @@ function onWa(ev) {
       w.add(T.action(who, `reagiu com ${ev.emoji}${ev.target ? ` a "${shortText(ev.target, 50, ev.target.length === 40)}"` : ''}`), { activity: 'event' });
       break;
     }
+    case 'offline': {
+      if (ev.state === 'start' && ev.messages > 0) st().add(T.info(`Recebendo as mensagens de quando você estava fora${ev.messages ? ` (${C}12${ev.messages}${C}02)` : ''}... sem balões nem sons até terminar.`));
+      break;
+    }
+    case 'backlog': {
+      const s0 = st();
+      s0.add(`${PRE} ${C}02${B}Enquanto você estava fora:${B}${C}12 ${ev.total}${C}02 mensage${ev.total === 1 ? 'm' : 'ns'} em${C}12 ${ev.items.length}${C}02 conversa${ev.items.length === 1 ? '' : 's'} ${C}14(duplo-clique no nome abre)`, { activity: 'msg' });
+      for (const it of ev.items.slice(0, 30)) {
+        const name = it.group ? chanOf(it.chat, it.name) : nickFor(it.chat, it.name);
+        s0.add(`${PRE}    ${C}12${name}${C}14 (${it.n})`, { jid: it.chat, nick: it.group ? '' : name, cls: 'blog' });
+      }
+      if (ev.items.length > 30) s0.add(`${PRE}    ${C}14... e mais ${ev.items.length - 30} conversa(s)`);
+      break;
+    }
     case 'poll': {
       const w = getWin(ev.chat); if (!w || !w.buf) break;
       if (w._ready) { w._ready.then(() => onWa(ev)); break; }
@@ -1630,6 +1656,8 @@ async function onMessage(m) {
   let w = getWin(m.chat) || (m.alt && getWin(m.alt)) || null;
   if (w && w._ready) await w._ready;
   const isNew = !w;
+  // mensagem acumulada (app estava desligado) de conversa fechada: não abre janela; vai para o resumo no Status
+  if (!w && m.backlog) return;
   if (!w) {
     // no IRC das antigas, um pvt novo abre a janela sem roubar o foco; grupo idem
     if (m.group) w = await openChannel(m.chat, false);
@@ -1648,19 +1676,20 @@ function afterMsg(w, m, isNew) {
     if (m.kind === 'action') text = actionBody(m, senderNick(w, m), text);
     fireScript(m.kind === 'action' ? 'ACTION' : 'TEXT', { nick: senderNick(w, m), chan: w.type === 'channel' ? w.name : '', target: w.type === 'channel' ? w.name : senderNick(w, m), win: w.id, text });
   }
+  const quiet = !!m.backlog; // acumulada: sem som e sem piscar
   if (S.active === w.id && document.hasFocus()) api('wa:read', w.jid).catch(() => {});
-  else api('win:flash').catch(() => {});
+  else if (!quiet) api('win:flash').catch(() => {});
   if (!m.group) {
     S.lastPvt = m.chat;
-    if (isNew) play('pvt'); else if (S.active !== w.id) play('msg');
+    if (!quiet) { if (isNew) play('pvt'); else if (S.active !== w.id) play('msg'); }
     if (S.away) {
       awayWin().add(`${C}12[${cleanNick(m.nick)}]${O} ${m.text || '[' + m.media + ']'}`, { activity: 'msg' });
-      if (S.cfg.awayAutoReply && !S.awayReplied.has(m.chat)) {
+      if (S.cfg.awayAutoReply && !quiet && !S.awayReplied.has(m.chat)) {
         S.awayReplied.add(m.chat);
         api('wa:send', m.chat, `[Away] ${S.away.msg} (desde ${S.away.since})`).then((e) => e && renderMsg(w, e)).catch(() => {});
       }
     }
-  } else if (m.mentions?.some((x) => x.me)) { play('notice'); if (S.away) awayWin().add(`${C}12[${w.name}/${cleanNick(m.nick)}]${O} ${m.text}`, { activity: 'hl' }); }
+  } else if (m.mentions?.some((x) => x.me)) { if (!quiet) play('notice'); if (S.away) awayWin().add(`${C}12[${w.name}/${cleanNick(m.nick)}]${O} ${m.text}`, { activity: 'hl' }); }
 }
 function awayWin() {
   let w = getWin('@away');

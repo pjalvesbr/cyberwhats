@@ -27,6 +27,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
@@ -43,18 +44,19 @@ import (
 )
 
 var (
-	outMu     sync.Mutex
-	stdout    = bufio.NewWriter(os.Stdout)
-	cli       *whatsmeow.Client
-	container *sqlstore.Container
-	dataDir   string
-	logFile   *os.File
-	groups    = map[types.JID]*types.GroupInfo{}
-	groupsMu  sync.RWMutex
-	chatsMu   sync.Mutex
-	chats     = map[string]map[string]any{} // conversas conhecidas (histórico)
-	ctx       = context.Background()
-	pairPhone string
+	offlineSyncing atomic.Bool
+	outMu          sync.Mutex
+	stdout         = bufio.NewWriter(os.Stdout)
+	cli            *whatsmeow.Client
+	container      *sqlstore.Container
+	dataDir        string
+	logFile        *os.File
+	groups         = map[types.JID]*types.GroupInfo{}
+	groupsMu       sync.RWMutex
+	chatsMu        sync.Mutex
+	chats          = map[string]map[string]any{} // conversas conhecidas (histórico)
+	ctx            = context.Background()
+	pairPhone      string
 )
 
 // ---------------------------------------------------------------- saída
@@ -577,6 +579,10 @@ func onEvent(raw any) {
 			nm, _ = e["chatName"].(string)
 		}
 		touchChat(e["chat"].(string), nm, grp, evt.Info.Timestamp.Unix(), -1)
+		// mensagem que ficou guardada no servidor enquanto o app estava desligado (ou já velha): chega "em silêncio"
+		if offlineSyncing.Load() || time.Since(evt.Info.Timestamp) > 2*time.Minute {
+			e["backlog"] = true
+		}
 		emit("message", e)
 	case *events.HistorySync:
 		go onHistory(evt)
@@ -620,8 +626,13 @@ func onEvent(raw any) {
 	case *events.CallOffer:
 		from := pn(evt.From)
 		emit("call", map[string]any{"from": from.String(), "nick": nameOf(from, ""), "video": false})
+	case *events.OfflineSyncPreview:
+		offlineSyncing.Store(true)
+		time.AfterFunc(5*time.Minute, func() { offlineSyncing.Store(false) }) // segurança: nunca fica "em silêncio" para sempre
+		emit("offline", map[string]any{"state": "start", "messages": evt.Messages, "total": evt.Total})
 	case *events.OfflineSyncCompleted:
-		emit("info", map[string]any{"text": fmt.Sprintf("Mensagens recebidas enquanto offline: %d", evt.Count)})
+		offlineSyncing.Store(false)
+		emit("offline", map[string]any{"state": "done", "count": evt.Count})
 	}
 }
 

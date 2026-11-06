@@ -336,3 +336,5 @@ body.child-max .mdiwin.max:not(.active) { visibility: hidden; content-visibility
 .gp-cnt { margin-left: auto; color: #606060; }
 .dlg label > span { flex: 1; }
 .dlg label.gp-it[hidden], .dlg [hidden] { display: none !important; }
+.buffer .ln.blog { cursor: pointer; } .buffer .ln.blog:hover { text-decoration: underline; }
+.buffer .ln.savedat { cursor: pointer; }

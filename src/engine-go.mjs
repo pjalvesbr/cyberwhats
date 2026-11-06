@@ -212,7 +212,7 @@ export class WhatsAppGo extends EventEmitter {
       case 'qr':
         QRCode.toDataURL(d.code, { margin: 1, scale: 5 }).then((dataUrl) => this.emit('wa', { type: 'qr', dataUrl }));
         break;
-      case 'pairing': case 'info': case 'error': case 'loggedOut': case 'call': case 'presence':
+      case 'pairing': case 'info': case 'error': case 'loggedOut': case 'call': case 'presence': case 'offline':
         if (type === 'error' || type === 'info') this.log(type, d.text);
         this.emit('wa', { type, ...d });
         break;
