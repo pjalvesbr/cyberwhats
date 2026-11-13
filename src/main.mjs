@@ -158,7 +158,9 @@ async function checkUpdate(manual) {
   const j = await r.json();
   const latest = (j.tag_name || j.name || '').trim();
   const cur = cwVersion();
-  const setup = (j.assets || []).find((a) => /setup.*\.exe$/i.test(a.name)) || (j.assets || []).find((a) => /\.exe$/i.test(a.name));
+  // instalador: .exe com "setup" no nome, senão o .zip dele, senão qualquer .exe/.zip que não seja o código-fonte
+  const as = (j.assets || []).filter((a) => !/src|source/i.test(a.name));
+  const setup = as.find((a) => /setup.*\.exe$/i.test(a.name)) || as.find((a) => /setup.*\.zip$/i.test(a.name)) || as.find((a) => /\.exe$/i.test(a.name)) || as.find((a) => /\.zip$/i.test(a.name));
   const info = { current: cur, latest: latest.replace(/^v/i, ''), newer: newer(latest, cur), url: j.html_url || 'https://github.com/pjalvesbr/cyberwhats/releases/latest', download: setup?.browser_download_url || '', notes: String(j.body || '').slice(0, 1500), manual: !!manual };
   return info;
 }

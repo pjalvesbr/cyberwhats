@@ -2,6 +2,10 @@
 
 O CyberWhats usa sempre 3.2.x.y, em homenagem ao CyberScript 3.2.
 
+## 3.2.0.6
+- Motor atualizado para a whatsmeow mais recente (10/11): reconexão mais estável (ao voltar da suspensão), menos mensagens perdidas por falha ao decifrar em grupos, confirmações de leitura mais certas e nomes de contato e de empresas mais corretos.
+- Aviso de versão nova também baixa direto quando a release traz o instalador em .zip.
+
 ## 3.2.0.5
 - **Salvar como...** na janela da foto e no botão direito de qualquer mídia (foto, vídeo, áudio, arquivo): você escolhe a pasta, e o app avisa onde salvou (clique na linha para abrir a pasta). "Abrir" continua guardando em Documentos\CyberWhats\Recebidos.
 - Motor atualizado para a whatsmeow mais recente (05/11): sincronização mais tolerante a erros de conferência, reconecta sozinho quando o servidor não responde, não trava ao conectar, protocolo do WhatsApp atualizado, respeita os limites do servidor na sincronização e mantém o nome mais recente dos contatos.
