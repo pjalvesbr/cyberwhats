@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Notification, protocol, net, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Notification, protocol, net, Tray, Menu, nativeImage, screen } from 'electron';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -35,13 +35,31 @@ const defaults = {
   notify: [], ignore: [], autojoin: [], nicklistWidth: 140, fontSize: 16, uiSize: 13, theme: 'cs:padrao', themeScheme: '', iconSet: 'modern', engine: 'go',
   trayMinimize: true, trayClose: false, startWithWindows: false, checkUpdates: true, linkPreviews: true, showList: false, publicIp: true, groupPopups: true
 };
-const loadCfg = () => { try { return { ...defaults, ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')) }; } catch { return { ...defaults }; } };
+// se o config.json estragar (PC desligou no meio da gravação), usa a cópia de segurança em vez de perder tudo
+const loadCfg = () => {
+  for (const f of [cfgFile, cfgFile + '.bak']) { try { return { ...defaults, ...JSON.parse(fs.readFileSync(f, 'utf8')) }; } catch {} }
+  return { ...defaults };
+};
 let cfg = loadCfg();
-const saveCfg = () => fs.writeFileSync(cfgFile, JSON.stringify(cfg, null, 2));
+const saveCfg = () => {
+  try {
+    const tmp = cfgFile + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+    try { if (fs.existsSync(cfgFile) && fs.statSync(cfgFile).size > 2) fs.copyFileSync(cfgFile, cfgFile + '.bak'); } catch {}
+    fs.renameSync(tmp, cfgFile);
+  } catch (e) { logMainError('salvar config', e); }
+};
+// erro inesperado no processo principal: registra em logs/erros.log em vez de mostrar a caixa de erro do Electron
+function logMainError(what, e) { try { fs.mkdirSync(path.join(dataDir, 'logs'), { recursive: true }); fs.appendFileSync(path.join(dataDir, 'logs', 'erros.log'), `[${new Date().toISOString()}] ${what} :: ${e?.stack || e}\r\n`); } catch {} }
+process.on('uncaughtException', (e) => logMainError('erro interno', e));
+process.on('unhandledRejection', (e) => logMainError('promessa rejeitada', e));
 
 function createWindow() {
+  // lembra o tamanho e a posição da janela (se ainda couber em algum monitor)
+  const b = cfg.winBounds;
+  const fits = b && screen.getAllDisplays().some((d) => b.x < d.workArea.x + d.workArea.width - 80 && b.x + b.width > d.workArea.x + 80 && b.y >= d.workArea.y - 10 && b.y < d.workArea.y + d.workArea.height - 60);
   win = new BrowserWindow({
-    width: 1024, height: 720, minWidth: 640, minHeight: 420,
+    ...(fits ? { x: b.x, y: b.y, width: b.width, height: b.height } : { width: 1024, height: 720 }), minWidth: 640, minHeight: 420,
     frame: false, backgroundColor: '#c0c0c0', show: false,
     title: 'CyberWhats 3.2',
     icon: path.join(__dirname, 'renderer/assets/app.png'),
@@ -52,7 +70,10 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer/index.html'), process.env.CW_DEMO ? { hash: 'demo' } : undefined);
   // iniciado junto com o Windows: abre direto na bandeja
   const hidden = process.argv.includes('--hidden') && cfg.trayMinimize !== false;
-  win.once('ready-to-show', () => { if (!hidden) win.show(); });
+  win.once('ready-to-show', () => { if (cfg.winMax && !hidden) win.maximize(); if (!hidden) win.show(); });
+  let boundsT = null;
+  const keepBounds = () => { clearTimeout(boundsT); boundsT = setTimeout(() => { if (!win || win.isDestroyed() || win.isMinimized() || !win.isVisible()) return; const max = win.isMaximized(); cfg = { ...cfg, winMax: max, ...(max ? {} : { winBounds: win.getNormalBounds() }) }; saveCfg(); }, 800); };
+  win.on('resize', keepBounds); win.on('move', keepBounds);
   win.on('closed', () => { win = null; app.quit(); });
   win.on('minimize', () => { if (cfg.trayMinimize && tray) { win.hide(); trayHint(); } });
   win.on('close', (e) => { if (cfg.trayClose && tray && !quitting) { e.preventDefault(); win.hide(); trayHint(); } });
@@ -123,7 +144,20 @@ const notifier = (() => {
     if (count > 1) show(`${name}: ${count} mensagens novas`, `${m.group ? m.nick + ': ' : ''}${bodyOf(m)}`, m.chat);
     else show(m.group ? `${name} — ${m.nick}` : `Pvt de ${m.nick}`, bodyOf(m), m.chat);
   };
+  // ---- chamadas: ao vivo = balão na hora; perdidas (app desligado) = um balão só
+  const lost = new Map(); let lostTimer = null;
+  const flushLost = () => {
+    lostTimer = null; if (!lost.size) return;
+    const list = [...lost.values()].sort((a, b) => b.n - a.n), total = list.reduce((a, x) => a + x.n, 0);
+    lost.clear();
+    show(`${total} chamada${total === 1 ? ' perdida' : 's perdidas'} enquanto você estava fora`, list.slice(0, 5).map((x) => `${x.name} (${x.n})`).join(', '), list.length === 1 ? list[0].from : null);
+  };
   return {
+    call(ev) {
+      const name = ev.nick || '+' + String(ev.from).split('@')[0];
+      if (ev.missed) { const o = lost.get(ev.from) || { from: ev.from, name, n: 0 }; o.n++; lost.set(ev.from, o); clearTimeout(lostTimer); lostTimer = setTimeout(flushLost, 4000); return; }
+      show(`Chamada de ${ev.video ? 'vídeo' : 'voz'} de ${name}`, 'Atenda pelo celular.', ev.from);
+    },
     sync(ev) {
       if (ev.state === 'start') { syncing = true; clearTimeout(syncTimer); syncTimer = setTimeout(() => { syncing = false; flushBack(); }, 5 * 60000); }
       if (ev.state === 'done') { syncing = false; flushBack(); }
@@ -218,6 +252,7 @@ app.whenReady().then(() => {
     win.webContents.send('wa:event', ev);
     if (ev.type === 'offline') notifier.sync(ev);
     if (ev.type === 'message' && !ev.msg.fromMe) notifier.message(ev.msg);
+    if (ev.type === 'call') notifier.call(ev);
   });
   createWindow();
   setupTray(); applyLogin();
@@ -245,6 +280,9 @@ app.whenReady().then(() => {
   h('st:addMine', (src) => { needGo('addMineSticker'); return wa.addMineSticker(src); });
   h('st:saveMine', (bytes) => { needGo('saveMineSticker'); return wa.saveMineSticker(bytes); });
   h('st:removeMine', (file) => { needGo('removeMineSticker'); return wa.removeMineSticker(file); });
+  h('wa:revoke', (jid, id) => { if (!wa.revoke) throw new Error('só no motor whatsmeow'); return wa.revoke(jid, id); });
+  h('wa:edit', (jid, id, text) => { if (!wa.edit) throw new Error('só no motor whatsmeow'); return wa.edit(jid, id, String(text || '')); });
+  h('wa:forward', (from, id, to) => { if (!wa.forward) throw new Error('só no motor whatsmeow'); return wa.forward(from, id, to); });
   h('wa:react', (jid, id, emoji) => { if (!wa.react) throw new Error('só no motor whatsmeow'); return wa.react(jid, id, emoji); });
   h('wa:pollVote', (jid, id, options) => { if (!wa.pollVote) throw new Error('só no motor whatsmeow'); return wa.pollVote(jid, id, options || []); });
   h('wa:sendPoll', (jid, name, options, multi) => { if (!wa.sendPoll) throw new Error('só no motor whatsmeow'); return wa.sendPoll(jid, name, options, multi); });

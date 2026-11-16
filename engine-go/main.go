@@ -4,6 +4,8 @@
 //	pedido:   {"id":1,"cmd":"send","args":{...}}
 //	resposta: {"id":1,"ok":true,"data":...}   ou   {"id":1,"ok":false,"error":"..."}
 //	evento:   {"event":"message","data":{...}}
+//
+// Licença: GPL-3.0 (veja o arquivo LICENSE desta pasta). O motor usa a go.mau.fi/libsignal, que é GPL-3.0.
 package main
 
 import (
@@ -276,9 +278,7 @@ func entryOf(evt *events.Message, live bool) map[string]any {
 	if pm := m.GetProtocolMessage(); pm != nil {
 		switch pm.GetType() {
 		case waE2E.ProtocolMessage_REVOKE:
-			if live {
-				emit("revoke", map[string]any{"chat": chat.String(), "id": pm.GetKey().GetID(), "nick": e["nick"]})
-			}
+			emit("revoke", map[string]any{"chat": chat.String(), "id": pm.GetKey().GetID(), "nick": e["nick"], "live": live})
 		}
 		return nil
 	}
@@ -541,6 +541,12 @@ func touchChat(id, name string, group bool, ts int64, unread int) {
 
 // ---------------------------------------------------------------- eventos da whatsmeow
 func onEvent(raw any) {
+	// um evento malformado não pode derrubar o motor
+	defer func() {
+		if p := recover(); p != nil {
+			logf("pânico no evento %T: %v", raw, p)
+		}
+	}()
 	switch evt := raw.(type) {
 	case *events.Connected:
 		me := meJID()
@@ -624,8 +630,13 @@ func onEvent(raw any) {
 			emit("sticker-fav", map[string]any{"key": key, "fav": sa.GetIsFavorite(), "raw": base64.StdEncoding.EncodeToString(raw), "w": sa.GetWidth(), "h": sa.GetHeight(), "ts": evt.GetTimestamp(), "hash": sa.GetImageHash(), "hasKey": len(sa.GetMediaKey()) > 0 && (sa.GetDirectPath() != "" || sa.GetURL() != "")})
 		}
 	case *events.CallOffer:
-		from := pn(evt.From)
-		emit("call", map[string]any{"from": from.String(), "nick": nameOf(from, ""), "video": false})
+		video := false
+		if evt.Data != nil {
+			_, video = evt.Data.GetOptionalChildByTag("video")
+		}
+		emitCall(evt.BasicCallMeta, video, false)
+	case *events.CallOfferNotice:
+		emitCall(evt.BasicCallMeta, evt.Media == "video", evt.Type == "group")
 	case *events.OfflineSyncPreview:
 		offlineSyncing.Store(true)
 		time.AfterFunc(5*time.Minute, func() { offlineSyncing.Store(false) }) // segurança: nunca fica "em silêncio" para sempre
@@ -634,6 +645,38 @@ func onEvent(raw any) {
 		offlineSyncing.Store(false)
 		emit("offline", map[string]any{"state": "done", "count": evt.Count})
 	}
+}
+
+// chamada recebida: uma vez por chamada; as que tocaram com o app desligado (ou já velhas) vão marcadas como perdidas
+var (
+	seenCalls   = map[string]bool{}
+	seenCallsMu sync.Mutex
+)
+
+func emitCall(meta types.BasicCallMeta, video, group bool) {
+	seenCallsMu.Lock()
+	dup := meta.CallID != "" && seenCalls[meta.CallID]
+	if meta.CallID != "" {
+		if len(seenCalls) > 500 {
+			seenCalls = map[string]bool{}
+		}
+		seenCalls[meta.CallID] = true
+	}
+	seenCallsMu.Unlock()
+	if dup {
+		return
+	}
+	who := meta.CallCreator
+	if who.IsEmpty() {
+		who = meta.From
+	}
+	from := pn(who)
+	missed := offlineSyncing.Load() || (!meta.Timestamp.IsZero() && time.Since(meta.Timestamp) > 45*time.Second)
+	e := map[string]any{"from": from.String(), "nick": nameOf(from, ""), "video": video, "group": group, "ts": meta.Timestamp.Unix(), "missed": missed, "id": meta.CallID}
+	if !meta.GroupJID.IsEmpty() {
+		e["groupJid"] = meta.GroupJID.String()
+	}
+	emit("call", e)
 }
 
 func onGroupInfo(evt *events.GroupInfo) {
@@ -820,6 +863,76 @@ func handle(r req) (any, error) {
 		return send(a)
 	case "sendFile":
 		return sendFile(a)
+	case "revoke":
+		// apagar para todos: a própria mensagem, ou a de outra pessoa quando você é admin do grupo
+		chat, err := parseJID(str(a, "chat"))
+		if err != nil {
+			return nil, err
+		}
+		sender := types.EmptyJID
+		if fm, _ := a["fromMe"].(bool); !fm {
+			if sender, err = types.ParseJID(str(a, "sender")); err != nil || sender.IsEmpty() {
+				return nil, errors.New("não sei quem mandou essa mensagem")
+			}
+		}
+		_, err = cli.SendMessage(ctx, chat, cli.BuildRevoke(chat, sender, str(a, "id")))
+		return nil, err
+	case "edit":
+		chat, err := parseJID(str(a, "chat"))
+		if err != nil {
+			return nil, err
+		}
+		_, err = cli.SendMessage(ctx, chat, cli.BuildEdit(chat, str(a, "id"), &waE2E.Message{Conversation: proto.String(str(a, "text"))}))
+		return nil, err
+	case "forward":
+		// encaminhar: texto vai como texto; mídia reaproveita o arquivo que já está no servidor do WhatsApp
+		to, err := parseJID(str(a, "jid"))
+		if err != nil {
+			return nil, err
+		}
+		fwd := &waE2E.ContextInfo{IsForwarded: proto.Bool(true), ForwardingScore: proto.Uint32(1)}
+		var m *waE2E.Message
+		if raw := str(a, "raw"); raw != "" {
+			b, err := base64.StdEncoding.DecodeString(raw)
+			if err != nil {
+				return nil, err
+			}
+			m = &waE2E.Message{}
+			if err := proto.Unmarshal(b, m); err != nil {
+				return nil, err
+			}
+			switch {
+			case m.ImageMessage != nil:
+				m = &waE2E.Message{ImageMessage: m.ImageMessage}
+				m.ImageMessage.ContextInfo = fwd
+			case m.VideoMessage != nil:
+				m = &waE2E.Message{VideoMessage: m.VideoMessage}
+				m.VideoMessage.ContextInfo = fwd
+			case m.AudioMessage != nil:
+				m = &waE2E.Message{AudioMessage: m.AudioMessage}
+				m.AudioMessage.ContextInfo = fwd
+			case m.DocumentMessage != nil:
+				m = &waE2E.Message{DocumentMessage: m.DocumentMessage}
+				m.DocumentMessage.ContextInfo = fwd
+			case m.StickerMessage != nil:
+				m = &waE2E.Message{StickerMessage: m.StickerMessage}
+				m.StickerMessage.ContextInfo = fwd
+			default:
+				m = nil
+			}
+		}
+		if m == nil {
+			text := str(a, "text")
+			if text == "" {
+				return nil, errors.New("essa mensagem não pode ser encaminhada")
+			}
+			m = &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String(text), ContextInfo: fwd}}
+		}
+		resp, err := cli.SendMessage(ctx, to, m)
+		if err != nil {
+			return nil, err
+		}
+		return sentEntry(to, resp.ID, resp.Timestamp, m), nil
 	case "react":
 		chat, err := parseJID(str(a, "chat"))
 		if err != nil {

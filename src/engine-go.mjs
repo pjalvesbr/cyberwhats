@@ -12,11 +12,16 @@ import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const HISTORY_CAP = 400;
+const HISTORY_CAP = 3000; // mensagens guardadas por conversa (a janela mostra as últimas e carrega as anteriores a pedido)
 const EXT = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'video/mp4': '.mp4', 'audio/ogg': '.ogg', 'audio/mpeg': '.mp3', 'audio/mp4': '.m4a', 'application/pdf': '.pdf' };
 const MIMEOF = Object.fromEntries(Object.entries({ 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'video/mp4': '.mp4', 'audio/ogg': '.ogg', 'audio/mpeg': '.mp3', 'audio/mp4': '.m4a', 'application/pdf': '.pdf' }).map(([k, v]) => [v, k]));
 const num = (j) => String(j || '').split('@')[0];
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// grava em arquivo temporário e troca no fim: se o PC desligar no meio, o arquivo antigo continua inteiro
+function writeAtomic(file, data) {
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, data);
+  fs.renameSync(tmp, file);
+}
 
 function binPath() {
   if (process.env.CW_ENGINE_BIN && !app.isPackaged) return process.env.CW_ENGINE_BIN; // só em desenvolvimento
@@ -55,11 +60,35 @@ export class WhatsAppGo extends EventEmitter {
     this.getCfg = () => ({});
     this.loadStore();
     setInterval(() => this.flush(), 5000);
+    setTimeout(() => this.cleanMediaCache(), 20000);
   }
 
-  log(...a) { try { fs.appendFileSync(this.debugLog, `[${new Date().toISOString()}] [go] ${a.join(' ')}\r\n`); } catch {} }
+  log(...a) {
+    try {
+      // conexao.log não cresce para sempre: passou de 5 MB, vira conexao.old.log
+      this._logN = (this._logN || 0) + 1;
+      if (this._logN % 500 === 1) { try { if (fs.statSync(this.debugLog).size > 5 * 1024 * 1024) fs.renameSync(this.debugLog, this.debugLog.replace(/\.log$/, '.old.log')); } catch {} }
+      fs.appendFileSync(this.debugLog, `[${new Date().toISOString()}] [go] ${a.join(' ')}\r\n`);
+    } catch {}
+  }
   setState(s, extra = {}) { this.state = s; this.log('estado', s, extra.reason || ''); this.emit('wa', { type: 'state', state: s, me: this.me, ...extra }); }
   hasSession() { return fs.existsSync(path.join(this.goDir, 'whatsmeow.db')); }
+
+  // cache das mídias mostradas no chat: apaga o que não é aberto há mais de 30 dias (dá para baixar de novo enquanto a mídia existir no WhatsApp)
+  cleanMediaCache(days = 30) {
+    const dir = path.join(this.dataDir, 'media-cache');
+    let n = 0, bytes = 0;
+    try {
+      const limit = Date.now() - days * 86400000;
+      for (const f of fs.readdirSync(dir)) {
+        const p = path.join(dir, f); let st; try { st = fs.statSync(p); } catch { continue; }
+        if (st.isFile() && Math.max(st.atimeMs, st.mtimeMs) < limit) { try { fs.unlinkSync(p); n++; bytes += st.size; } catch {} }
+      }
+    } catch {}
+    this._mediaIdx = null;
+    if (n) this.log('cache de mídia', n, 'arquivos antigos apagados,', Math.round(bytes / 1048576), 'MB');
+    return { files: n, bytes };
+  }
 
   // ---------------- persistência local ----------------
   storeFile() { return path.join(this.dataDir, 'store-go.json'); }
@@ -67,8 +96,8 @@ export class WhatsAppGo extends EventEmitter {
     try { const s = JSON.parse(fs.readFileSync(this.storeFile(), 'utf8')); for (const c of s.chats || []) this.chats.set(c.id, c); } catch {}
   }
   flush() {
-    try { fs.writeFileSync(this.storeFile(), JSON.stringify({ chats: [...this.chats.values()] })); } catch {}
-    for (const jid of this.dirty) { try { fs.writeFileSync(this.histFile(jid), JSON.stringify(this.history.get(jid) || [])); } catch {} }
+    try { writeAtomic(this.storeFile(), JSON.stringify({ chats: [...this.chats.values()] })); } catch {}
+    for (const jid of this.dirty) { try { writeAtomic(this.histFile(jid), JSON.stringify(this.history.get(jid) || [])); } catch {} }
     this.dirty.clear();
   }
   histFile(jid) { return path.join(this.histDir, jid.replace(/[^a-z0-9@._-]/gi, '_') + '.json'); }
@@ -122,7 +151,7 @@ export class WhatsAppGo extends EventEmitter {
     if (this.proc) return;
     const bin = binPath();
     this.log('iniciando motor', bin);
-    const isJs = bin.endsWith('.js');
+    const isJs = /\.c?js$/.test(bin);
     const p = (this.proc = spawn(isJs ? process.execPath : bin, isJs ? [bin] : [], { env: isJs ? { ...process.env, ELECTRON_RUN_AS_NODE: '1' } : process.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }));
     let buf = '';
     p.stdout.setEncoding('utf8');
@@ -137,14 +166,16 @@ export class WhatsAppGo extends EventEmitter {
         else if (m.id && this.pending.has(m.id)) { const { res, rej, t } = this.pending.get(m.id); clearTimeout(t); this.pending.delete(m.id); m.ok ? res(m.data) : rej(new Error(m.error)); }
       }
     });
+    p.stdin.on('error', (e) => this.log('stdin', e.message)); // motor fechou no meio de um comando: não derruba o app
     p.stderr.on('data', (d) => this.log('stderr', String(d).trim().slice(0, 500)));
     p.on('error', (e) => { this.log('erro ao iniciar motor', e.message); this.emit('wa', { type: 'error', text: 'Não consegui iniciar o motor (cw-engine): ' + e.message }); });
     p.on('exit', (code) => {
       this.log('motor saiu', code);
-      this.proc = null; this.ready = false;
+      if (this.proc === p) this.proc = null;
+      this.ready = false;
       for (const { rej, t } of this.pending.values()) { clearTimeout(t); rej(new Error('motor encerrado')); }
       this.pending.clear();
-      if (!this.quitting) {
+      if (!this.quitting && !p._cwKilled) {
         this.setState('offline', { reason: 'o motor parou (código ' + code + ')' });
         if (this.wantOnline) setTimeout(() => this.connect({}), 3000);
       }
@@ -156,7 +187,7 @@ export class WhatsAppGo extends EventEmitter {
     return new Promise((res, rej) => {
       const t = setTimeout(() => { this.pending.delete(id); rej(new Error('tempo esgotado (' + cmd + ')')); }, timeout);
       this.pending.set(id, { res, rej, t });
-      this.proc.stdin.write(JSON.stringify({ id, cmd, args }) + '\n');
+      try { this.proc.stdin.write(JSON.stringify({ id, cmd, args }) + '\n'); } catch (e) { clearTimeout(t); this.pending.delete(id); rej(new Error('motor encerrado')); }
     });
   }
 
@@ -187,7 +218,7 @@ export class WhatsAppGo extends EventEmitter {
     this.wantOnline = false;
     try { await this.call('logout', {}, 15000); } catch {}
     this.ready = false; this.me = null;
-    this.quitting = true; try { this.proc?.kill(); } catch {} this.proc = null; this.quitting = false;
+    if (this.proc) { this.proc._cwKilled = true; try { this.proc.kill(); } catch {} } this.proc = null;
     try { fs.rmSync(path.join(this.goDir, 'whatsmeow.db'), { force: true }); fs.rmSync(path.join(this.goDir, 'whatsmeow.db-wal'), { force: true }); fs.rmSync(path.join(this.goDir, 'whatsmeow.db-shm'), { force: true }); } catch {}
     this.setState('offline', { reason: 'Sessão encerrada' });
   }
@@ -210,7 +241,7 @@ export class WhatsAppGo extends EventEmitter {
         }
         break;
       case 'qr':
-        QRCode.toDataURL(d.code, { margin: 1, scale: 5 }).then((dataUrl) => this.emit('wa', { type: 'qr', dataUrl }));
+        QRCode.toDataURL(d.code, { margin: 1, scale: 5 }).then((dataUrl) => this.emit('wa', { type: 'qr', dataUrl })).catch((e) => this.log('qr', e.message));
         break;
       case 'pairing': case 'info': case 'error': case 'loggedOut': case 'call': case 'presence': case 'offline':
         if (type === 'error' || type === 'info') this.log(type, d.text);
@@ -245,9 +276,13 @@ export class WhatsAppGo extends EventEmitter {
       case 'sync':
         this.emit('wa', { type: 'sync', progress: d.progress, chats: this.listChats() });
         break;
-      case 'revoke':
-        this.emit('wa', { type: 'revoke', ...d });
+      case 'revoke': {
+        // guarda que foi apagada, para continuar riscada depois de reabrir o app
+        const o = this.getHistory(d.chat).find((x) => x.id === d.id);
+        if (o) { o.deleted = true; this.dirty.add(d.chat); }
+        if (d.live !== false) this.emit('wa', { type: 'revoke', ...d });
         break;
+      }
       case 'edit': {
         const h = this.getHistory(d.chat);
         const o = h.find((x) => x.id === d.id);
@@ -287,7 +322,12 @@ export class WhatsAppGo extends EventEmitter {
       const t = new Date(e.ts * 1000).toTimeString().slice(0, 8);
       const name = (e.group ? '#' : '') + String(e.chatName || this.chats.get(e.chat)?.name || num(e.chat)).replace(/[\\/:*?"<>|]/g, '_');
       const body = e.kind === 'media' ? `[${e.media}] ${e.caption || e.fileName || ''}` : e.text;
-      fs.appendFileSync(path.join(this.logDir, name + '.log'), (e.kind === 'action' ? `[${t}] * ${String(body).toLowerCase().startsWith(String(e.nick).toLowerCase() + ' ') ? body : e.nick + ' ' + body}` : `[${t}] <${e.nick}> ${body}`) + '\r\n');
+      // os logs só tinham a hora: uma linha com a data sempre que o dia muda
+      const day = new Date(e.ts * 1000).toLocaleDateString('pt-BR');
+      this._logDay = this._logDay || new Map();
+      const head = this._logDay.get(name) === day ? '' : `--- ${day} ---\r\n`;
+      this._logDay.set(name, day);
+      fs.appendFileSync(path.join(this.logDir, name + '.log'), head + (e.kind === 'action' ? `[${t}] * ${String(body).toLowerCase().startsWith(String(e.nick).toLowerCase() + ' ') ? body : e.nick + ' ' + body}` : `[${t}] <${e.nick}> ${body}`) + '\r\n');
     } catch {}
   }
 
@@ -449,6 +489,34 @@ export class WhatsAppGo extends EventEmitter {
     return name;
   }
   removeMineSticker(file) { const f = path.join(this.mineDir, path.basename(String(file))); if (fs.existsSync(f)) fs.unlinkSync(f); return true; }
+  // apagar para todos (a sua mensagem; ou a de outra pessoa, se você for admin do grupo)
+  async revoke(jid, id) {
+    const o = this.getHistory(jid).find((x) => x.id === id);
+    if (!o) throw new Error('mensagem não encontrada');
+    await this.call('revoke', { chat: o.alt || o.chat, id, fromMe: !!o.fromMe, sender: o.fromMe ? '' : (o.senderRaw || o.sender) });
+    o.deleted = true; this.dirty.add(o.chat);
+    return true;
+  }
+  // editar uma mensagem de texto sua (o WhatsApp aceita por uns 15 minutos depois do envio)
+  async edit(jid, id, text) {
+    const o = this.getHistory(jid).find((x) => x.id === id);
+    if (!o) throw new Error('mensagem não encontrada');
+    if (!o.fromMe) throw new Error('só dá para editar as suas mensagens');
+    if (o.kind === 'media' || o.kind === 'poll') throw new Error('só dá para editar mensagens de texto');
+    if (Date.now() / 1000 - (o.ts || 0) > 15 * 60) throw new Error('essa mensagem é antiga demais para editar (o WhatsApp só deixa por 15 minutos)');
+    await this.call('edit', { chat: o.alt || o.chat, id, text });
+    if (text.startsWith('* ')) { o.kind = 'action'; o.text = text.slice(2); } else { o.kind = 'text'; o.text = text; }
+    o.edited = true; this.dirty.add(o.chat);
+    return this.pub(o);
+  }
+  async forward(fromJid, id, toJid) {
+    const o = this.getHistory(fromJid).find((x) => x.id === id);
+    if (!o) throw new Error('mensagem não encontrada');
+    if (o.kind === 'poll') throw new Error('enquete não pode ser encaminhada');
+    const e = await this.call('forward', { jid: toJid, raw: o.kind === 'media' ? (o.raw || '') : '', text: o.kind === 'media' ? (o.caption || '') : (o.text || '') }, 120000);
+    if (e) { this.store(e); this.appendLog(e); }
+    return this.pub(e);
+  }
   async react(jid, id, emoji) {
     const o = this.getHistory(jid).find((x) => x.id === id);
     if (!o) throw new Error('mensagem não encontrada');
@@ -504,7 +572,10 @@ export class WhatsAppGo extends EventEmitter {
     const dir = path.join(this.dataDir, 'media-cache');
     fs.mkdirSync(dir, { recursive: true });
     const safe = String(id).replace(/[^a-z0-9_-]/gi, '_');
-    const hit = fs.readdirSync(dir).find((f) => f.startsWith(safe + '.'));
+    // índice em memória (ler a pasta inteira a cada mídia ficava lento com milhares de arquivos)
+    if (!this._mediaIdx) { this._mediaIdx = new Map(); try { for (const f of fs.readdirSync(dir)) this._mediaIdx.set(f.slice(0, f.lastIndexOf('.')), f); } catch {} }
+    let hit = this._mediaIdx.get(safe);
+    if (hit && !fs.existsSync(path.join(dir, hit))) { this._mediaIdx.delete(safe); hit = null; }
     const mk = (f) => ({ mime: MIMEOF[path.extname(f)] || '', url: 'cwmedia://m/' + encodeURIComponent(f) });
     if (hit) return mk(hit);
     if ((e.size || 0) > 64 * 1024 * 1024) return null;
@@ -512,6 +583,7 @@ export class WhatsAppGo extends EventEmitter {
     const mime = String(r.mimetype || e.mimetype || '').split(';')[0];
     const f = safe + (EXT[mime] || '.bin');
     fs.writeFileSync(path.join(dir, f), Buffer.from(r.data, 'base64'));
+    this._mediaIdx.set(safe, f);
     return mk(f);
   }
   async markRead(jid) {

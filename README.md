@@ -139,6 +139,7 @@ GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -H windowsgui" -o .
 | `src/scripts/` | scripts padrão (`frases.cws`, `gamagame.cws`) e seus dados |
 | `src/engine.mjs`, `src/engine/` | motor alternativo (WhatsApp Web), em Ferramentas > Opções > Motor |
 | `tools/` | utilitários de build |
+| `tests/` | testes automáticos: `npm test` (unidade) e `npm run test:ui` (abre o app com um motor de mentira) |
 
 ## Versões
 
@@ -153,3 +154,9 @@ Por **Paulo Johnny Alves** (johnny.alves@gmail.com) — [www.cyberwhats.org](htt
 
 Baseado no **CyberScript 3.2**: artes, ícones, sons, temas, frases e o estilo visual são criação da equipe original do CyberScript — todos os créditos a eles. Fonte: Fixedsys Excelsior 3.01.
 Motor: [whatsmeow](https://github.com/tulir/whatsmeow) (MPL-2.0).
+
+## Licenças
+
+- O **CyberWhats** (interface, scripts e ferramentas) é distribuído sob a licença **MIT**: veja [LICENSE](LICENSE).
+- O **motor `cw-engine`** (pasta `engine-go/` e o executável em `bin/`) usa a biblioteca `go.mau.fi/libsignal`, que é **GPL-3.0**. Por isso o motor é distribuído sob a **GPL-3.0**: veja [engine-go/LICENSE](engine-go/LICENSE). O app conversa com o motor como um programa separado (JSON por stdin/stdout).
+- As licenças de todas as bibliotecas incluídas estão em [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt), que também vai junto na instalação.

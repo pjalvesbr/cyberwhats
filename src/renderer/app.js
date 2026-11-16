@@ -233,6 +233,13 @@ class Win {
         const quick = ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((em) => [em + (mine === em ? '  (sua)' : ''), () => reactTo(this, ln, mine === em ? '' : em)]);
         extra.unshift(['Reagir', null, false, { children: [...quick, '-', ['Outro emoji...', () => window.EmojiPicker.open(this.edit, this.edit, (em) => reactTo(this, ln, em))], ['Tirar minha reação', () => reactTo(this, ln, ''), !mine]] }]);
       }
+      if (ln?.dataset.id && this.jid && !ln.dataset.id.startsWith('tmp-') && !ln.classList.contains('deleted')) {
+        const mine = ln.dataset.me === '1', admin = this.type === 'channel' && !!this.nicks.find((n) => n.me)?.admin;
+        const more = [['Encaminhar...', () => forwardMsg(this, ln.dataset.id)]];
+        if (mine && ln.dataset.txt === '1') more.push(['Editar...', () => editMsg(this, ln.dataset.id)]);
+        if (mine || admin) more.push(['Apagar para todos', () => deleteMsg(this, ln.dataset.id, mine)]);
+        extra.unshift(...more, '-');
+      }
       const med = ln?.querySelector('a.media[data-id], .inmedia[data-id]');
       if (med) extra.unshift(['Salvar como...', () => saveMediaAs(this, med.dataset.chat, med.dataset.id)], ['Abrir', () => api('wa:open', med.dataset.chat, med.dataset.id).catch((er) => this.add(T.err(friendlyError(er, 'abrir o arquivo'))))], '-');
       const stk = ln?.querySelector('.inmedia.sticker');
@@ -328,7 +335,8 @@ class Win {
     if (opts.jid) ln.dataset.jid = opts.jid;
     ln.innerHTML = codesToHtml(ts + line) + (opts.html || '');
     if (opts.before) this.buf.insertBefore(ln, opts.before); else this.buf.appendChild(ln);
-    if (++this.lines > 2000) { this.buf.firstChild?.remove(); this.lines--; }
+    // limite de linhas na tela: tira as mais antigas (menos quando o usuário está carregando histórico antigo)
+    if (++this.lines > 4000 && !opts.before) { let f = this.buf.firstChild; if (f === this._olderLn) f = f.nextSibling; f?.remove(); this.lines--; }
     if (stick || opts.forceScroll) this.buf.scrollTop = this.buf.scrollHeight;
     if (opts.activity && S.active !== this.id) this.setActivity(opts.activity);
     return ln;
@@ -340,7 +348,7 @@ class Win {
     this.sw.classList.remove('act-msg', 'act-event', 'act-hl');
     this.sw.classList.add('act-' + a);
   }
-  clear() { if (this.buf) { this.buf.innerHTML = ''; this.lines = 0; } }
+  clear() { if (this.buf) { this.buf.innerHTML = ''; this.lines = 0; this._olderLn = null; this._older = null; } }
   minimize() { this.el.classList.add('min'); const next = S.order.filter((i) => i !== this.id && !S.wins.get(i).el.classList.contains('min')).pop(); if (next) activate(next); else { S.active = null; this.el.classList.remove('active'); this.sw.classList.remove('active'); updateAppTitle(); } }
   close() {
     if (this.type === 'status') { if (!confirm('Fechar o CyberWhats?')) return; api('app:quit'); return; }
@@ -352,6 +360,7 @@ class Win {
   }
   bufClick(e) {
     if (e.target.closest('video, audio')) return;
+    if (e.target.closest('.ln.older.more')) { loadOlder(this); return; }
     const po = e.target.closest('.poll .popt'); if (po) { pollClick(po); return; }
     const ask = e.target.closest('.lprev.ask'); if (ask) { ask.classList.remove('ask'); ask.classList.add('pending', 'loading'); ask.textContent = 'buscando prévia...'; queueLinkPrev(ask); return; }
     const lp = e.target.closest('.lprev[data-url]'); if (lp && lp.dataset.url && !lp.classList.contains('pending')) { api('app:openUrl', lp.dataset.url); return; }
@@ -1326,15 +1335,42 @@ async function openQuery(jid, nick, focus) {
   if (focus) activate(jid);
   return w;
 }
+const HIST_PAGE = 300; // mensagens mostradas ao abrir a conversa; as anteriores entram a pedido
 async function loadHistory(w) {
   try {
     const hist = await api('wa:history', w.jid);
     if (hist.length) {
-      w.add(`${C}14---- Histórico (${hist.length} mensagens) ----`, {});
-      for (const m of hist) renderMsg(w, m, true);
+      const shown = hist.slice(-HIST_PAGE);
+      w._older = hist.slice(0, hist.length - shown.length);
+      w._olderLn = w.add('', { nots: true, cls: 'older' });
+      updateOlderLine(w, hist.length);
+      for (const m of shown) renderMsg(w, m, true);
       w.add(`${C}14---- Fim do histórico ----`, { forceScroll: true });
     }
   } catch {}
+}
+function updateOlderLine(w, total) {
+  const ln = w._olderLn; if (!ln) return;
+  const left = w._older?.length || 0;
+  w._histTotal = total ?? w._histTotal ?? 0;
+  ln.innerHTML = codesToHtml(left ? `${C}14---- Histórico: ${C}12▲ ver mensagens anteriores${C}14 (faltam ${left} de ${w._histTotal}) ----` : `${C}14---- Histórico (${w._histTotal} mensagens) ----`);
+  ln.classList.toggle('more', left > 0);
+  ln.title = left ? 'Clique para carregar as mensagens anteriores' : '';
+}
+// carrega mais um bloco de mensagens antigas acima das que já estão na tela (sem mexer na rolagem)
+function loadOlder(w) {
+  if (!w._older?.length || !w._olderLn) return;
+  const batch = w._older.splice(-HIST_PAGE);
+  const buf = w.buf, h0 = buf.scrollHeight, top0 = buf.scrollTop;
+  const anchor = w._olderLn.nextSibling;
+  const keepDay = w._lastDay; w._lastDay = null;
+  for (const m of batch) renderMsg(w, m, true, anchor);
+  // o primeiro separador de dia que já existia pode ter ficado repetido
+  const prevSep = (() => { let n = anchor?.previousSibling; while (n && !n.classList?.contains('daysep')) n = n.previousSibling; return n; })();
+  if (anchor?.classList?.contains('daysep') && prevSep && prevSep.textContent === anchor.textContent) anchor.remove();
+  w._lastDay = keepDay;
+  updateOlderLine(w);
+  buf.scrollTop = top0 + (buf.scrollHeight - h0);
 }
 
 // "/me" vai para o WhatsApp como "* Nick ação" (para quem não usa o CyberWhats entender);
@@ -1385,6 +1421,42 @@ function setReaction(ln, who, emoji) {
   const top = [...count].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e]) => e).join('');
   sp.textContent = top + (ln._reacts.size > 1 ? ' ' + ln._reacts.size : '');
   sp.title = [...ln._reacts].map(([n, e]) => `${n}: ${e}`).join('\n');
+}
+// ---------------- apagar, editar e encaminhar ----------------
+const linesOf = (w, id) => [...w.buf.querySelectorAll(`.ln[data-id="${CSS.escape(id)}"]`)];
+async function deleteMsg(w, id, mine = true) {
+  if (!confirm(mine ? 'Apagar esta mensagem para todos?' : 'Apagar a mensagem dessa pessoa para todos? (você é admin do grupo)')) return;
+  try { await api('wa:revoke', w.jid, id); linesOf(w, id).forEach((l) => l.classList.add('deleted', 'struck')); w.add(T.info('Mensagem apagada para todos.')); }
+  catch (e) { w.add(T.err(friendlyError(e, 'apagar a mensagem'))); }
+}
+async function editMsg(w, id, newText) {
+  try {
+    const hist = await api('wa:history', w.jid); const m = hist.find((x) => x.id === id);
+    if (!m) throw new Error('mensagem não encontrada');
+    const cur0 = m.kind === 'action' ? '* ' + m.text : m.text;
+    const v = newText != null ? newText : await ask('Editar mensagem', 'Novo texto (o WhatsApp só deixa editar até 15 minutos depois do envio):', waToCodes(cur0 || ''));
+    if (v == null || !String(v).trim() || codesToWa(v) === cur0) return;
+    const e = await api('wa:edit', w.jid, id, codesToWa(v));
+    const old = linesOf(w, id);
+    if (old.length && e) { renderMsg(w, e, false, old[0]); old.forEach((l) => l.remove()); }
+  } catch (e) { w.add(T.err(friendlyError(e, 'editar a mensagem'))); }
+}
+async function forwardMsg(w, id) {
+  // escolhe os destinos: conversas recentes e grupos, com filtro
+  const rows = (S.chats || []).filter((c) => c.id !== 'status@broadcast').slice(0, 400).map((c) => ({ id: c.id, name: c.group ? chanOf(c.id, c.name) : nickFor(c.id, visible(c.name) ? c.name : '+' + num(c.id)) }));
+  const body = h('div');
+  body.innerHTML = `<div>Encaminhar para (até 5 conversas):</div><div class="drow"><input type="text" class="gp-q" placeholder="filtrar..." style="flex:1"></div><div class="gp-list">${rows.map((r) => `<label class="gp-it"><input type="checkbox" value="${esc(r.id)}"><span>${esc(r.name)}</span></label>`).join('')}</div>`;
+  $('.gp-q', body).addEventListener('input', (e) => { const q = e.target.value.toLowerCase(); body.querySelectorAll('.gp-it').forEach((o) => (o.hidden = q && !o.textContent.toLowerCase().includes(q))); });
+  const ids = await dialog({ title: 'Encaminhar mensagem', body, width: 400, buttons: [['Encaminhar', (d) => [...d.querySelectorAll('.gp-list input:checked')].map((i) => i.value)], ['Cancelar', null]] });
+  if (!ids || !ids.length) return;
+  if (ids.length > 5) return w.add(T.err('Escolha no máximo 5 conversas para encaminhar.'));
+  for (const to of ids) {
+    try {
+      const e = await api('wa:forward', w.jid, id, to);
+      const tw = getWin(to); if (tw && e) renderMsg(tw, e);
+      w.add(T.info(`Encaminhada para ${C}12${rows.find((r) => r.id === to)?.name || to}`));
+    } catch (e) { w.add(T.err(friendlyError(e, 'encaminhar a mensagem'))); }
+  }
 }
 // salvar mídia num lugar escolhido (e dizer onde ficou)
 async function saveMediaAs(w, chat, id) {
@@ -1452,7 +1524,7 @@ function senderNick(w, m) {
   if (w.type === 'query') return w.name;
   return nickFor(m.sender, visible(m.nick) ? m.nick : '+' + num(m.sender));
 }
-function renderMsg(w, m, hist = false) {
+function renderMsg(w, m, hist = false, before = null) {
   const nick = senderNick(w, m);
   indexNick(nick, m.sender);
   const adm = w.type === 'channel' ? w.nickOf(m.sender)?.admin : null;
@@ -1491,9 +1563,12 @@ function renderMsg(w, m, hist = false) {
     else if (m.kind === 'action') s = T.action(nick, actionBody(m, nick, t));
     else if (w.type === 'channel') s = m.fromMe ? T.textChanSelf(nick, adm, t, w.name) : T.textChan(nick, adm, t, hl, w.name);
     else s = m.fromMe ? T.textQuerySelf(nick, t) : T.textQuery(nick, t);
-    const ln = w.add(s, { date, hist, id: m.id, nick, jid: m.fromMe ? null : m.sender, html: i === lines.length - 1 ? html : '', activity: hist ? null : hl ? 'hl' : 'msg', forceScroll: m.fromMe && !hist, indent, cont: i > 0 });
+    const ln = w.add(s, { date, hist, id: m.id, nick, jid: m.fromMe ? null : m.sender, html: i === lines.length - 1 ? html : '', activity: hist ? null : hl ? 'hl' : 'msg', forceScroll: m.fromMe && !hist && !before, indent, cont: i > 0, before });
+    if (ln && m.fromMe) ln.dataset.me = '1';
+    if (ln && (m.kind === 'text' || m.kind === 'action')) ln.dataset.txt = '1';
     // resposta (citação): linha cinza logo abaixo da mensagem, dizendo a quem respondeu
-    if (i === lines.length - 1 && ln && m.quote) w.add(`${C}14└ respondendo ${cleanNick(m.quote.nick)}: ${shortText(m.quote.text, 80, Array.from(m.quote.text || '').length === 60)}`, { date, hist, indent, cont: true, cls: 'quote' });
+    if (i === lines.length - 1 && ln && m.quote) w.add(`${C}14└ respondendo ${cleanNick(m.quote.nick)}: ${shortText(m.quote.text, 80, Array.from(m.quote.text || '').length === 60)}`, { date, hist, indent, cont: true, cls: 'quote', before, id: m.id });
+    if (ln && m.deleted) ln.classList.add('deleted', 'struck'); // apagada por quem mandou: continua riscada ao reabrir
     if (ln && i === lines.length - 1 && ln.querySelector('.inmedia')) queueMedia(w, m, ln, hist);
     if (ln && i === lines.length - 1) { const lp = ln.querySelector('.lprev.pending'); if (lp) queueLinkPrev(lp); }
     if (i === 0 && ln && !m.fromMe) markNick(ln, nick);
@@ -1525,7 +1600,7 @@ function onWa(ev) {
         status.setTitle(`Status: ${myNick()} [+i] no WhatsApp`);
         setTimeout(autoJoin, 2500);
         setTimeout(subscribeNotify, 4000);
-        if (S.cfg.showRecent !== false && !S.recentShown) { S.recentShown = true; setTimeout(() => cmdRecent(30, true), 6500); }
+        if (S.cfg.showRecent !== false && !S.recentShown) { S.recentShown = true; setTimeout(async () => { const keep = S.active; await cmdRecent(30, true); if (keep !== 'status' && S.wins.has(keep)) activate(keep); }, 6500); } // não tira o foco de quem já abriu uma conversa
         if (S.cfg.showList && !S.listShown) { S.listShown = true; setTimeout(async () => { const keep = S.active; await cmdList(''); if (S.wins.has(keep)) activate(keep); }, 7500); }
         if (S.cfg.showMotd !== false && !S.motdShown) { S.motdShown = true; setTimeout(async () => { await showLusers(); await showMotd(); }, 3500); }
         setTimeout(() => { for (const x of S.wins.values()) if (x.type === 'query') { x._photoLoaded = false; loadPhoto(x); } }, 3500);
@@ -1584,7 +1659,7 @@ function onWa(ev) {
     case 'revoke': {
       const w = getWin(ev.chat); if (!w) break;
       const ln = w.buf.querySelector(`.ln[data-id="${CSS.escape(ev.id)}"]`);
-      if (ln) { ln.innerHTML = `<s>${ln.innerHTML}</s>`; ln.classList.add('deleted'); }
+      w.buf.querySelectorAll(`.ln[data-id="${CSS.escape(ev.id)}"]`).forEach((l) => l.classList.add('deleted', 'struck'));
       w.add(`${C}14* ${cleanNick(ev.nick || '?')} apagou uma mensagem`, { activity: 'event' });
       break;
     }
@@ -1642,12 +1717,36 @@ function onWa(ev) {
     }
     case 'group': if (ev.group) { S.groups.set(ev.group.id, ev.group); getWin(ev.group.id)?.setNicks(ev.group); } break;
     case 'group-event': onGroupEvent(ev); break;
-    case 'call':
+    case 'call': {
+      const nick = nickFor(ev.from, ev.nick), kind = ev.video ? 'vídeo' : 'voz';
+      if (ev.missed) { missedCall(ev, nick); break; } // tocou com o app desligado: entra no resumo, sem som
       play('notice');
-      status.add(T.info(`${C}4Chamada de ${ev.video ? 'vídeo' : 'voz'} recebida de ${cleanNick(ev.nick)} (+${num(ev.from)}) — atenda pelo celular.`));
-      (getWin(ev.from) || status).add(`${C}4*** ${cleanNick(ev.nick)} está te ligando (${ev.video ? 'vídeo' : 'voz'})`, { activity: 'hl' });
+      const pw = getWin(ev.from);
+      // uma linha só: no pvt da pessoa se estiver aberto, senão no Status
+      if (pw) pw.add(`${C}04*** ${nick} está te ligando (${kind}${ev.group ? ', em grupo' : ''}) — atenda pelo celular.`, { activity: 'hl' });
+      else status.add(T.info(`${C}04Chamada de ${kind}${ev.group ? ' em grupo' : ''} de ${nick} (+${num(ev.from)}) — atenda pelo celular.`), { activity: 'hl', jid: ev.from, nick, cls: 'blog' });
       break;
+    }
   }
+}
+// chamadas que tocaram com o app desligado: um resumo só no Status (duplo-clique abre o pvt)
+const missedCalls = []; let missedTimer = null;
+function missedCall(ev, nick) {
+  missedCalls.push({ from: ev.from, nick, ts: ev.ts || 0, video: !!ev.video });
+  clearTimeout(missedTimer);
+  missedTimer = setTimeout(() => {
+    const by = new Map();
+    for (const c of missedCalls.splice(0)) { const o = by.get(c.from) || { ...c, n: 0, vid: 0 }; o.n++; if (c.video) o.vid++; if (c.ts >= o.ts) o.ts = c.ts; by.set(c.from, o); }
+    const list = [...by.values()].sort((a, b) => b.ts - a.ts), total = list.reduce((a, x) => a + x.n, 0);
+    const s0 = st();
+    s0.add(`${PRE} ${C}04${B}Chamadas perdidas enquanto você estava fora:${B} ${total} ${C}14(duplo-clique no nome abre o pvt)`, { activity: 'hl' });
+    for (const c of list) {
+      const when = c.ts ? new Date(c.ts * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+      s0.add(`${PRE}    ${C}12${c.nick}${C}14 (+${num(c.from)}) — ${c.n} chamada${c.n === 1 ? '' : 's'}${c.vid ? ` (${c.vid} de vídeo)` : ''}${when ? `, última em ${when}` : ''}`, { jid: c.from, nick: c.nick, cls: 'blog' });
+      const pw = getWin(c.from);
+      if (pw) pw.add(`${C}04*** ${c.n} chamada${c.n === 1 ? '' : 's'} perdida${c.n === 1 ? '' : 's'} de ${c.nick}${when ? ` (última em ${when})` : ''}`, { activity: 'event' });
+    }
+  }, 2500);
 }
 async function onMessage(m) {
   if (!m.fromMe && (S.cfg.ignore || []).includes(m.sender)) return;
@@ -1708,7 +1807,7 @@ function onGroupEvent(ev) {
     const self = S.me && t.id === S.me.id;
     if (ev.kind === 'add') { w.add(T.join(tn(t), addr, w.name), { activity: 'event' }); play('join'); fireScript('JOIN', { nick: tn(t), chan: w.name, target: w.name, win: w.id }); }
     if (ev.kind === 'remove') fireScript(by && by !== cleanNick(t.nick) && ev.authorId !== t.id ? 'KICK' : 'PART', { nick: cleanNick(t.nick), chan: w.name, target: w.name, win: w.id, knick: by });
-    else if (ev.kind === 'remove') {
+    if (ev.kind === 'remove') {
       if (by && by !== cleanNick(t.nick) && ev.authorId !== t.id) { w.add(T.kick(by, cleanNick(t.nick), w.name), { activity: 'event' }); if (self) play('kick'); }
       else w.add(T.part(cleanNick(t.nick), addr, 'saiu do grupo', w.name), { activity: 'event' });
     }
@@ -1778,7 +1877,7 @@ const HELP = [
   ['/nick <novo>', 'muda seu nome no WhatsApp'], ['/apelido <alvo> <apelido>', 'apelido local p/ contato, #canal ou "eu" (só no CyberWhats)'], ['/meunick <apelido>', 'seu apelido local'], ['/recado <texto>', 'muda seu recado (status)'], ['/away [msg] /back', 'marca/desmarca away'],
   ['/notify <nick>', 'avisa quando o contato ficar online (/unnotify desfaz)'], ['/ignore <nick>', 'ignora mensagens (/unignore desfaz)'], ['/enviar', 'envia arquivo (DCC Send) — ou arraste para a janela, ou cole uma imagem com Ctrl+V'], ['/gravar', 'grava uma mensagem de voz (de novo: envia; Esc cancela) — ou o botão do microfone'],
   ['/r <texto>', 'responde ao último pvt'], ['/server [número]', 'conecta (QR ou código)'], ['/disconnect /logout', 'desconecta / encerra a sessão'],
-  ['/web', 'mostra o WhatsApp Web original (só no motor antigo)'], ['/interface <px> /fonte <px>', 'tamanho da interface / do bate-papo'], ['/icones [moderno|classico]', 'alterna entre ícones modernos e clássicos'], ['/atualizar', 'procura uma versão nova do CyberWhats'], ['/reagir [emoji]', 'reage à última mensagem recebida (sem emoji abre a lista; - tira) — ou botão direito na linha > Reagir'], ['/figurinhas', 'abre suas figurinhas (favoritas do WhatsApp, recebidas e as suas) — Ctrl+Shift+Espaço'], ['/enquete Pergunta? | op1 | op2', 'cria uma enquete (-m: várias respostas); clique nas opções para votar'], ['/buscar <texto>', 'procura em todas as conversas (histórico e logs); Ctrl+F procura na janela'], ['/tema [nome] [scheme]', 'troca o tema (sem nome: lista os 22 temas do CyberScript)'], ['/clear', 'limpa a janela'], ['/log /recebidos', 'abre pastas'], ['/tile /cascade', 'organiza as janelas'], ['/dicas', 'dica do CyberScript'],
+  ['/web', 'mostra o WhatsApp Web original (só no motor antigo)'], ['/interface <px> /fonte <px>', 'tamanho da interface / do bate-papo'], ['/icones [moderno|classico]', 'alterna entre ícones modernos e clássicos'], ['/atualizar', 'procura uma versão nova do CyberWhats'], ['/apagar', 'apaga para todos a sua última mensagem (ou a selecionada com duplo-clique) — também no botão direito'], ['/editar [novo texto]', 'edita a sua última mensagem de texto (até 15 min depois de enviar)'], ['/encaminhar', 'encaminha a última mensagem (ou a selecionada) para outras conversas'], ['/reagir [emoji]', 'reage à última mensagem recebida (sem emoji abre a lista; - tira) — ou botão direito na linha > Reagir'], ['/figurinhas', 'abre suas figurinhas (favoritas do WhatsApp, recebidas e as suas) — Ctrl+Shift+Espaço'], ['/enquete Pergunta? | op1 | op2', 'cria uma enquete (-m: várias respostas); clique nas opções para votar'], ['/buscar <texto>', 'procura em todas as conversas (histórico e logs); Ctrl+F procura na janela'], ['/tema [nome] [scheme]', 'troca o tema (sem nome: lista os 22 temas do CyberScript)'], ['/clear', 'limpa a janela'], ['/log /recebidos', 'abre pastas'], ['/tile /cascade', 'organiza as janelas'], ['/dicas', 'dica do CyberScript'],
   ['/motd', 'mostra a mensagem do dia (MOTD)'], ['/lusers', 'estatísticas: canais, contatos, usuários'], ['/echo <texto>', 'escreve só na sua tela'], ['/say <texto>', 'envia texto (mesmo começando com /)'],
   ['/opcoes', 'abre as opções (Alt+O)'], ['/about', 'sobre o CyberWhats'], ['/atalhos', 'lista os atalhos de teclado'], ['/ajuda scripts', 'referência da linguagem CyberWhats Script'],
   ['/scripts [nome]', 'abre o editor de scripts (Alt+R)'], ['/recarregar', 'recarrega todos os scripts (.cws)'], ['//comando', 'executa avaliando $identificadores e %variáveis'],
@@ -1992,6 +2091,18 @@ async function run(line, w, opts = {}) {
         return w.add(T.info(`Ícones: ${C}12${v === 'classic' ? 'clássicos (CyberScript)' : 'modernos'}`));
       }
       case 'atualizar': case 'update': case 'versao': return cmdUpdate(w);
+      case 'apagar': case 'delete': case 'del': case 'editar': case 'edit': case 'encaminhar': case 'forward': {
+        if (!w.jid) return w.add(T.err('Abra uma conversa primeiro.'));
+        const what = /^(apagar|delete|del)$/.test(cmd) ? 'del' : /^(editar|edit)$/.test(cmd) ? 'edit' : 'fwd';
+        // age na mensagem selecionada para responder (duplo-clique) ou, sem seleção, na sua última mensagem (encaminhar: na última da conversa)
+        const all = [...w.buf.querySelectorAll('.ln[data-id]:not(.cont):not(.deleted)')].filter((l) => !l.dataset.id.startsWith('tmp-'));
+        const pick = w.quote ? all.find((l) => l.dataset.id === w.quote) : (what === 'fwd' ? all : all.filter((l) => l.dataset.me === '1' && (what !== 'edit' || l.dataset.txt === '1'))).pop();
+        if (!pick) return w.add(T.err(what === 'fwd' ? 'Nenhuma mensagem para encaminhar.' : 'Não achei uma mensagem sua nesta janela.'));
+        if (w.quote) w.setQuote(null);
+        if (what === 'del') return deleteMsg(w, pick.dataset.id, pick.dataset.me === '1');
+        if (what === 'edit') return editMsg(w, pick.dataset.id, args.trim() ? args : null);
+        return forwardMsg(w, pick.dataset.id);
+      }
       case 'reagir': case 'react': case 'reacao': {
         if (!w.jid) return w.add(T.err('Abra uma conversa para reagir.'));
         const lns = [...w.buf.querySelectorAll('.ln[data-id]')].filter((l) => l.dataset.jid);
@@ -2051,6 +2162,7 @@ async function say(w, text, action = false) {
   if (!w.jid) return w.add(T.err('Não é possível enviar texto nesta janela. Use /msg, /query ou /join.'));
   if (S.conn !== 'online') return w.add(T.err('Você não está conectado. Use /server'));
   const q = w.quote; w.setQuote(null);
+  const orig = text;
   // nicks completados com Tab viram menção de verdade no WhatsApp (@número), como chamar alguém no IRC
   if (w.type === 'channel' && w._compl?.size) {
     for (const [nk, id] of w._compl) {
@@ -2066,13 +2178,30 @@ async function say(w, text, action = false) {
       return n && n.id ? `${sp}@${num(n.id)}` : all;
     });
   }
+  // a mensagem aparece na hora, em cinza ("enviando"); quando o WhatsApp confirma, vira a linha definitiva no mesmo lugar
+  const tmpId = 'tmp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+  const waText = codesToWa(text);
+  renderMsg(w, { id: tmpId, chat: w.jid, group: w.type === 'channel', fromMe: true, sender: S.me?.id, nick: myNick(), ts: Date.now() / 1000, kind: action ? 'action' : 'text', text: action ? waText.replace(/^\* /, '') : waText });
+  const tmpLines = () => [...w.buf.querySelectorAll(`.ln[data-id="${tmpId}"]`)];
+  tmpLines().forEach((l) => { l.classList.add('sending'); l.title = 'Enviando...'; l.querySelector('.lprev')?.remove(); });
   try {
     const t0 = performance.now();
-    const e = await api('wa:send', w.jid, codesToWa(text), q);
+    const e = await api('wa:send', w.jid, waText, q);
     S.lag = Math.round(performance.now() - t0);
-    if (e && !w.buf.querySelector(`.ln[data-id="${CSS.escape(e.id)}"]`)) renderMsg(w, e);
+    const tl = tmpLines();
+    if (e && !w.buf.querySelector(`.ln[data-id="${CSS.escape(e.id)}"]`)) {
+      const stick = w.buf.scrollTop + w.buf.clientHeight >= w.buf.scrollHeight - 20;
+      renderMsg(w, e, false, tl[0] || null);
+      if (stick) w.buf.scrollTop = w.buf.scrollHeight;
+    }
+    tl.forEach((l) => l.remove());
     if (w._typingSent) { w._typingSent = 0; clearTimeout(w._typingStop); }
-  } catch (err) { play('error'); w.add(T.err(friendlyError(err, 'enviar a mensagem'))); }
+  } catch (err) {
+    tmpLines().forEach((l) => { l.classList.remove('sending'); l.classList.add('failed'); l.title = 'Não foi enviada'; delete l.dataset.id; });
+    play('error'); w.add(T.err(friendlyError(err, 'enviar a mensagem')));
+    // não perde o que foi digitado: devolve o texto para a caixa (se ela ainda estiver vazia)
+    if (!action && w.edit && !w.edit.value) w.edit.value = orig;
+  }
 }
 async function sendFile(w, path, caption = '', opts) {
   if (S.conn !== 'online') return w.add(T.err('Você não está conectado.'));
@@ -2390,7 +2519,9 @@ async function cmdSearch(q, w) {
     const cw = r.group ? await openChannel(r.chat, true) : await openQuery(r.chat, r.chatName, true);
     if (cw._ready) await cw._ready;
     setTimeout(() => {
-      const ln = r.id && cw.buf.querySelector(`.ln[data-id="${CSS.escape(r.id)}"]`);
+      // a mensagem pode estar no histórico antigo, ainda não carregado na janela
+      let ln = r.id && cw.buf.querySelector(`.ln[data-id="${CSS.escape(r.id)}"]`);
+      while (r.id && !ln && cw._older?.length) { loadOlder(cw); ln = cw.buf.querySelector(`.ln[data-id="${CSS.escape(r.id)}"]`); }
       const fb = findBar(cw, q);
       if (ln && fb) { // posiciona na mensagem escolhida
         fb._pick(ln); ln.scrollIntoView({ block: 'center' }); ln.classList.add('flash'); setTimeout(() => ln.classList.remove('flash'), 1600);

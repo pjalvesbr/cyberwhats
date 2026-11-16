@@ -2,6 +2,24 @@
 
 O CyberWhats usa sempre 3.2.x.y, em homenagem ao CyberScript 3.2.
 
+## 3.2.0.7
+- **Apagar, editar e encaminhar mensagens**: botão direito na linha > **Encaminhar...**, **Editar...** (suas mensagens de texto, até 15 minutos) e **Apagar para todos** (as suas, ou de qualquer um se você for admin do grupo). Também pelos comandos `/apagar`, `/editar [novo texto]` e `/encaminhar`.
+- **Envio na hora**: a mensagem aparece em cinza com ⏳ assim que você aperta Enter e vira a linha normal quando o WhatsApp confirma; se falhar, fica marcada como não enviada.
+- **Histórico maior**: cada conversa guarda as últimas 3000 mensagens (antes 500). Ao abrir aparecem as 300 mais recentes; clique em "▲ ver mensagens anteriores" no topo para carregar mais. A busca abre a mensagem mesmo que ela esteja nas mais antigas.
+- Contatos Recentes e Lista de Canais não tiram mais o foco se você já abriu uma conversa logo depois de conectar.
+- Base atualizada para o Electron 45 (Chromium mais novo, com as correções de segurança dele).
+- **Licenças**: o motor (`cw-engine`) passa a ser distribuído sob GPL-3.0, como exige a biblioteca libsignal usada pela whatsmeow; o restante continua MIT. O instalador agora traz os avisos de licença de todos os componentes (`THIRD_PARTY_NOTICES.txt`).
+- Testes automáticos no repositório (`npm test` e `npm run test:ui`), com um motor de mentira que não conecta em lugar nenhum.
+- **Chamadas perdidas com o app desligado** não disparam mais uma fila de avisos: viram um resumo só no Status ("Chamadas perdidas enquanto você estava fora"), com duplo-clique para abrir o pvt, e um balão único. Chamada ao vivo aparece uma vez só (antes saía em duas linhas e podia repetir) e ganhou balão.
+- Corrigido: quando alguém saía ou era removido de um grupo, a linha de "Saiu" / "kickou" não aparecia.
+- Mensagem apagada por quem mandou continua riscada depois de reabrir o app.
+- Se o envio falhar, o texto digitado volta para a caixa em vez de se perder.
+- A janela lembra o tamanho, a posição e se estava maximizada.
+- Mais proteção contra perda de dados: configurações e históricos são gravados de forma segura (com cópia de reserva do config), e erros internos vão para `logs/erros.log` em vez de derrubar o app.
+- Limpeza automática: mídias do cache não abertas há mais de 30 dias são apagadas, e o `conexao.log` não cresce sem limite. Os logs das conversas agora marcam a data quando o dia muda.
+- Mídias no chat carregam mais rápido em instalações com muito histórico.
+- Motor atualizado para a whatsmeow mais recente (16/11) e bibliotecas de criptografia e rede atualizadas.
+
 ## 3.2.0.6
 - Motor atualizado para a whatsmeow mais recente (10/11): reconexão mais estável (ao voltar da suspensão), menos mensagens perdidas por falha ao decifrar em grupos, confirmações de leitura mais certas e nomes de contato e de empresas mais corretos.
 - Aviso de versão nova também baixa direto quando a release traz o instalador em .zip.
